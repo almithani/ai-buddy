@@ -1,0 +1,6 @@
+# Build environment for macOS with Xcode CLT (no full Xcode install).
+# C++ standard library headers live inside the SDK on macOS 26, not in
+# the CLT's base include path, so we point CXXFLAGS at them explicitly.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "15.0"
+CXXFLAGS = "-I/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1 -I/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include"

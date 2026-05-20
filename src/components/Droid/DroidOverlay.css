@@ -1,0 +1,19 @@
+.overlay-root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.overlay-root:hover .droid-wrapper {
+  filter: brightness(1.08);
+}
+
+.overlay-root:active .droid-wrapper {
+  transform: scale(0.93);
+  transition: transform 0.1s ease;
+}

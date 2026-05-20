@@ -1,0 +1,156 @@
+.droid-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center bottom;
+}
+
+/* ── Eye colour variables, overridden per state ── */
+.droid-wrapper {
+  --eye-color-from: #60D4FF;
+  --eye-color-to:   #0077CC;
+}
+.droid-thinking { --eye-color-from: #CC88FF; --eye-color-to: #7722CC; }
+.droid-working  { --eye-color-from: #FFB840; --eye-color-to: #CC6600; }
+.droid-done     { --eye-color-from: #44FFB0; --eye-color-to: #00AA66; }
+.droid-error    { --eye-color-from: #FF6666; --eye-color-to: #CC2222; }
+
+/* ─── Body fill responds to eye colour variable via SVG gradient ─────────
+   (The radialGradient id values are static, but we animate the eye-fill
+   directly with CSS fill property overrides below.) */
+
+/* ── Eye fill colour ── */
+.eye-fill {
+  fill: var(--eye-color-from);
+  transition: fill 0.4s ease;
+}
+
+/* ── Thinking ring ── */
+.droid-think-ring {
+  opacity: 0;
+  transform-origin: 50px 36px;
+  transform-box: fill-box;
+}
+.droid-thinking .droid-think-ring {
+  opacity: 1;
+  animation: spin-ring 2s linear infinite;
+}
+
+/* ══════════════════════════════════════
+   STATE ANIMATIONS
+══════════════════════════════════════ */
+
+/* Idle — gentle float + occasional blink */
+.droid-idle,
+.droid-listening {
+  animation: float 3.8s ease-in-out infinite;
+}
+.droid-idle .droid-eye {
+  animation: blink 5s ease-in-out infinite;
+}
+.droid-listening .droid-eye {
+  transform: scaleY(1.12);
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+/* Thinking — float + pulsing eyes + ring */
+.droid-thinking {
+  animation: float 3.8s ease-in-out infinite;
+}
+.droid-thinking .droid-eye {
+  animation: eye-pulse 1.1s ease-in-out infinite;
+}
+
+/* Working — float + faster eye pulse */
+.droid-working {
+  animation: float 3.8s ease-in-out infinite;
+}
+.droid-working .droid-eye {
+  animation: eye-pulse 0.75s ease-in-out infinite;
+}
+
+/* Done — bounce once */
+.droid-done {
+  animation: bounce-done 0.65s cubic-bezier(0.68, -0.55, 0.27, 1.55) both;
+}
+.droid-done .droid-eye {
+  animation: squish-happy 0.65s ease both;
+}
+
+/* Error — shake */
+.droid-error {
+  animation: shake 0.5s ease-in-out both;
+}
+.droid-error .droid-eye {
+  animation: eye-squint 0.5s ease both;
+}
+
+/* ── Task icon badge ── */
+.droid-task-icon {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 16px;
+  line-height: 1;
+  animation: badge-pop 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55) both;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+
+/* ══════════════════════════════════════
+   KEYFRAMES
+══════════════════════════════════════ */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0);    }
+  50%       { transform: translateY(-7px); }
+}
+
+@keyframes blink {
+  0%, 90%, 100% { transform: scaleY(1);    }
+  94%           { transform: scaleY(0.05); }
+}
+
+@keyframes eye-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%      { opacity: 0.5; transform: scale(0.82); }
+}
+
+@keyframes spin-ring {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes bounce-done {
+  0%   { transform: translateY(0)   scale(1,    1);    }
+  25%  { transform: translateY(-18px) scale(0.94, 1.06); }
+  50%  { transform: translateY(0)   scale(1.06, 0.94); }
+  72%  { transform: translateY(-9px)  scale(0.98, 1.02); }
+  100% { transform: translateY(0)   scale(1,    1);    }
+}
+
+@keyframes squish-happy {
+  0%   { transform: scale(1,    1);    }
+  30%  { transform: scale(1.2,  0.8); }
+  60%  { transform: scale(0.9,  1.1); }
+  100% { transform: scale(1,    1);    }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0);  }
+  18%      { transform: translateX(-7px); }
+  38%      { transform: translateX(7px);  }
+  55%      { transform: translateX(-5px); }
+  74%      { transform: translateX(5px);  }
+}
+
+@keyframes eye-squint {
+  0%, 100% { transform: scaleY(1);   }
+  40%      { transform: scaleY(0.3); }
+}
+
+@keyframes badge-pop {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}

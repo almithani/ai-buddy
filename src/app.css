@@ -1,0 +1,51 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --accent:      #00B4FF;
+  --accent-dim:  #0088CC;
+  --accent-glow: rgba(0, 180, 255, 0.25);
+  --bg-deep:     #080c18;
+  --bg-card:     #111827;
+  --bg-input:    #1a2235;
+  --border:      rgba(255, 255, 255, 0.08);
+  --text:        #ffffff;
+  --text-muted:  #8899bb;
+  --success:     #00E676;
+  --error:       #FF5252;
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: stretch;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
