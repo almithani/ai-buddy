@@ -1,3 +1,16 @@
-src-tauri/target 
+# Rust / Cargo
+src-tauri/target/
+
+# Node
+node_modules/
+dist/
+
+# Tauri
+src-tauri/gen/
+
+# macOS
 .DS_Store
-node_modules
+
+# Env / secrets
+.env
+.env.*
