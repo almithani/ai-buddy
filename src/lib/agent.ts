@@ -98,7 +98,8 @@ function parseToolCall(text: string): ToolCall | null {
 export async function runAgent(
   userMessage: string,
   history: ChatMessage[],
-  callbacks: AgentCallbacks
+  callbacks: AgentCallbacks,
+  resourceContext?: string
 ): Promise<string> {
   const { onToken, onStatus, onDroidState } = callbacks;
 
@@ -107,10 +108,14 @@ export async function runAgent(
   );
   const systemPrompt = buildSystemPrompt(prefs.map((p) => p.rule));
 
+  const finalUserMessage = resourceContext
+    ? `${resourceContext}\n\n${userMessage}`
+    : userMessage;
+
   // Convert history to the format expected by the Rust command
   const messages = [
     ...history.map((m) => ({ role: m.role === "buddy" ? "model" : "user", content: m.content })),
-    { role: "user", content: userMessage },
+    { role: "user", content: finalUserMessage },
   ];
 
   // Agentic loop — up to 5 tool-call rounds

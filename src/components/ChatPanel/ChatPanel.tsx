@@ -15,6 +15,13 @@ interface DisplayMessage {
   streaming?: boolean;
 }
 
+interface Resource {
+  id: number;
+  type: "text" | "file";
+  label: string;
+  content: string;
+}
+
 let nextId = 1;
 
 export default function ChatPanel() {
@@ -24,6 +31,7 @@ export default function ChatPanel() {
   const [status, setStatus] = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resources, setResources] = useState<Resource[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingIdRef = useRef<number | null>(null);
@@ -69,16 +77,13 @@ export default function ChatPanel() {
     // "hotkey-triggered" is a bare signal — no payload. We pull the text via
     // get_pending_text() so there is no race with the window becoming visible.
     const unlisten = listen("hotkey-triggered", async () => {
-      const { text, debug } = await invoke<{ text: string; debug: string }>("get_pending_text");
-      const greeting = text ? `How can I help?\n\n> ${text}` : "How can I help?";
-      const debugBlock = `\n\n---\n\`\`\`\n${debug.trim()}\n\`\`\``;
-      setMessages([
-        {
-          id: nextId++,
-          role: "buddy",
-          text: greeting + debugBlock,
-        },
-      ]);
+      const { text } = await invoke<{ text: string; debug: string }>("get_pending_text");
+      setMessages([{ id: nextId++, role: "buddy", text: "How can I help?" }]);
+      setResources(
+        text
+          ? [{ id: nextId++, type: "text", label: text.slice(0, 50) + (text.length > 50 ? "…" : ""), content: text }]
+          : []
+      );
       setInput("");
       setBusy(false);
       setTimeout(() => inputRef.current?.focus(), 50);
@@ -94,12 +99,25 @@ export default function ChatPanel() {
     getCurrentWindow().startDragging().catch(() => null);
   }
 
+  function removeResource(id: number) {
+    setResources((r) => r.filter((res) => res.id !== id));
+  }
+
   async function handleSend() {
     const text = input.trim();
     if (!text || busy) return;
 
     setInput("");
     setBusy(true);
+
+    const capturedResources = resources;
+    setResources([]);
+
+    const resourceContext = capturedResources.length > 0
+      ? capturedResources
+          .map((r) => r.type === "text" ? `Selected text:\n${r.content}` : `File: ${r.label}`)
+          .join("\n\n")
+      : undefined;
 
     const userMsg: DisplayMessage = { id: nextId++, role: "user", text };
     setMessages((m) => [...m, userMsg]);
@@ -138,7 +156,7 @@ export default function ChatPanel() {
           };
           setDroidState(map[s] ?? "idle");
         },
-      });
+      }, resourceContext);
 
       // Finalise the streaming message with the clean final text
       setMessages((m) =>
@@ -175,8 +193,13 @@ export default function ChatPanel() {
     setDragging(false);
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
-    const names = files.map((f) => f.name).join(", ");
-    setInput((v) => (v ? `${v}\n[Dropped: ${names}]` : `[Dropped: ${names}]`));
+    const newResources: Resource[] = files.map((f) => ({
+      id: nextId++,
+      type: "file",
+      label: f.name,
+      content: f.name,
+    }));
+    setResources((r) => [...r, ...newResources]);
     inputRef.current?.focus();
   }
 
@@ -232,6 +255,18 @@ export default function ChatPanel() {
       {dragging && (
         <div className="chat-drop-overlay">
           <span>Drop files here</span>
+        </div>
+      )}
+
+      {resources.length > 0 && (
+        <div className="chat-resources">
+          {resources.map((r) => (
+            <div key={r.id} className="chat-resource-chip">
+              <span className="chat-resource-chip-icon">{r.type === "text" ? "“" : "□"}</span>
+              <span className="chat-resource-chip-label">{r.label}</span>
+              <button className="chat-resource-chip-remove" onClick={() => removeResource(r.id)}>✕</button>
+            </div>
+          ))}
         </div>
       )}
 
