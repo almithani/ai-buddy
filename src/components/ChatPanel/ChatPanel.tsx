@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import Droid from "../Droid/Droid";
 import { DroidState } from "../Droid/Droid";
@@ -17,9 +18,7 @@ interface DisplayMessage {
 let nextId = 1;
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState<DisplayMessage[]>([
-    { id: nextId++, role: "buddy", text: "Hi! What can I help you with?" },
-  ]);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [droidState, setDroidState] = useState<DroidState>("idle");
   const [status, setStatus] = useState("");
@@ -35,6 +34,56 @@ export default function ChatPanel() {
 
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  // Check AX permission on mount. If missing, poll every 2 s until granted,
+  // then swap the warning for the normal greeting automatically.
+  useEffect(() => {
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+    invoke<boolean>("check_accessibility_permission").then((trusted) => {
+      setMessages([{
+        id: nextId++,
+        role: "buddy",
+        text: trusted
+          ? "Hi! What can I help you with?"
+          : "I need **Accessibility permission** to read and edit text in other apps.\n\nGo to **System Settings → Privacy & Security → Accessibility** and add AI Buddy, then come back.",
+      }]);
+
+      if (!trusted) {
+        pollInterval = setInterval(async () => {
+          const nowTrusted = await invoke<boolean>("check_accessibility_permission");
+          if (nowTrusted) {
+            clearInterval(pollInterval!);
+            pollInterval = null;
+            setMessages([{ id: nextId++, role: "buddy", text: "Hi! What can I help you with?" }]);
+          }
+        }, 2000);
+      }
+    });
+
+    return () => { if (pollInterval) clearInterval(pollInterval); };
+  }, []);
+
+  useEffect(() => {
+    // "hotkey-triggered" is a bare signal — no payload. We pull the text via
+    // get_pending_text() so there is no race with the window becoming visible.
+    const unlisten = listen("hotkey-triggered", async () => {
+      const { text, debug } = await invoke<{ text: string; debug: string }>("get_pending_text");
+      const greeting = text ? `How can I help?\n\n> ${text}` : "How can I help?";
+      const debugBlock = `\n\n---\n\`\`\`\n${debug.trim()}\n\`\`\``;
+      setMessages([
+        {
+          id: nextId++,
+          role: "buddy",
+          text: greeting + debugBlock,
+        },
+      ]);
+      setInput("");
+      setBusy(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    });
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   async function handleClose() {

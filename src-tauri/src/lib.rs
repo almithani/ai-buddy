@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 mod accessibility;
 mod download;
@@ -7,6 +7,16 @@ mod memory;
 
 use memory::DbState;
 use llm::LlmState;
+use accessibility::PrevApp;
+
+#[derive(Clone, serde::Serialize)]
+pub struct PendingCapture {
+    pub text: String,
+    pub debug: String,
+}
+
+/// Capture from the last hotkey press — text + diagnostic log.
+pub struct PendingText(pub std::sync::Mutex<PendingCapture>);
 
 #[tauri::command]
 fn check_onboarding_complete(app: tauri::AppHandle) -> bool {
@@ -26,7 +36,6 @@ fn complete_onboarding(app: tauri::AppHandle) -> Result<(), String> {
 
     show_droid_window(&app)?;
 
-    // Kick off model load in the background now that onboarding is done
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app2.state::<LlmState>();
@@ -52,25 +61,7 @@ fn show_droid_window(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn get_platform() -> &'static str {
-    if cfg!(target_os = "macos") { "macos" }
-    else if cfg!(target_os = "windows") { "windows" }
-    else { "linux" }
-}
-
-#[tauri::command]
-fn request_accessibility_permission() {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-            .spawn();
-    }
-}
-
-#[tauri::command]
-fn show_chat(app: tauri::AppHandle) -> Result<(), String> {
+fn show_chat_impl(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("chat") {
         if let Some(droid) = app.get_webview_window("droid") {
             if let Ok(pos) = droid.outer_position() {
@@ -96,11 +87,44 @@ fn show_chat(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_platform() -> &'static str {
+    if cfg!(target_os = "macos") { "macos" }
+    else if cfg!(target_os = "windows") { "windows" }
+    else { "linux" }
+}
+
+#[tauri::command]
+fn request_accessibility_permission() {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn();
+    }
+}
+
+#[tauri::command]
+fn show_chat(app: tauri::AppHandle) -> Result<(), String> {
+    show_chat_impl(&app)
+}
+
+#[tauri::command]
 fn hide_chat(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("chat") {
         w.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Called by ChatPanel after "hotkey-triggered". Returns the captured text
+/// plus a diagnostic log, then clears state.
+#[tauri::command]
+fn get_pending_text(state: tauri::State<'_, PendingText>) -> PendingCapture {
+    let mut guard = state.0.lock().unwrap();
+    let capture = guard.clone();
+    guard.text.clear();
+    guard.debug.clear();
+    capture
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -114,15 +138,51 @@ pub fn run() {
             memory::init_db(&conn)?;
             app.manage(DbState(std::sync::Mutex::new(conn)));
 
-            // --- LLM state (model loaded lazily after onboarding) ---
+            // --- LLM state ---
             app.manage(LlmState(std::sync::Mutex::new(None)));
+
+            // --- Accessibility: previous frontmost app PID ---
+            app.manage(PrevApp(std::sync::Mutex::new(None)));
+
+            // --- Pending capture: filled by hotkey, read by chat window ---
+            app.manage(PendingText(std::sync::Mutex::new(PendingCapture {
+                text: String::new(),
+                debug: String::new(),
+            })));
+
+            // --- Global hotkey: ⌥ Space ---
+            {
+                use tauri_plugin_global_shortcut::ShortcutState;
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_shortcut("Alt+Space")?
+                        .with_handler(|app, _shortcut, event| {
+                            if event.state() == ShortcutState::Pressed {
+                                let prev = app.state::<PrevApp>();
+                                let pending = app.state::<PendingText>();
+
+                                // 1. Save frontmost PID (via NSWorkspace, no AX needed)
+                                accessibility::save_prev_app_pid(&prev);
+                                // 2. Capture selected text + diagnostic log
+                                let (text, debug) = accessibility::capture_selected_text_debug(&prev);
+                                // 3. Store so ChatPanel can read reliably
+                                *pending.0.lock().unwrap() = PendingCapture { text, debug };
+                                // 4. Show chat window
+                                show_chat_impl(app).ok();
+                                // 5. Send signal — no payload; chat calls get_pending_text()
+                                if let Some(chat) = app.get_webview_window("chat") {
+                                    let _ = chat.emit("hotkey-triggered", ());
+                                }
+                            }
+                        })
+                        .build(),
+                )?;
+            }
 
             // --- Window routing ---
             let is_onboarded = data_dir.join("onboarding_complete").exists();
             if is_onboarded {
                 show_droid_window(app.handle())?;
-                // Only load model if the file actually exists (may not if download was
-                // interrupted or the app data dir was partially wiped).
                 let app2 = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     match download::model_path(&app2) {
@@ -151,6 +211,7 @@ pub fn run() {
             request_accessibility_permission,
             show_chat,
             hide_chat,
+            get_pending_text,
             // Download
             download::check_model_exists,
             download::start_model_download,
@@ -165,9 +226,6 @@ pub fn run() {
             memory::delete_preference,
             // Accessibility
             accessibility::check_accessibility_permission,
-            accessibility::get_focused_text,
-            accessibility::set_focused_text,
-            accessibility::get_selected_text,
             accessibility::replace_selected_text,
         ])
         .run(tauri::generate_context!())

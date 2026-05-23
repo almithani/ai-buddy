@@ -150,6 +150,14 @@ pub async fn generate_response(
 
         let mut n_pos = n_input as i32;
 
+        // Rolling buffer for cross-token stop-sequence detection.
+        // The model may emit "<end_of_turn>" as individual character tokens
+        // rather than the single special token, so a per-token check is not
+        // enough — we need to watch the accumulated tail.
+        const STOP_SEQS: &[&str] = &["<end_of_turn>", "<start_of_turn>"];
+        let max_stop_len = STOP_SEQS.iter().map(|s| s.len()).max().unwrap_or(20);
+        let mut tail = String::new();
+
         for _ in 0..max_new {
             // -1 means "last logit in the batch output", independent of sequence position.
             let new_token = sampler.sample(&ctx, -1);
@@ -159,32 +167,57 @@ pub async fn generate_response(
                 break;
             }
 
-            // Tokenized renders special tokens as their text (e.g. "<end_of_turn>").
-            // Plaintext renders them as empty — useless for stop-sequence detection.
             #[allow(deprecated)]
-            let token_text = model
+            let piece = model
                 .token_to_str(new_token, Special::Tokenize)
                 .unwrap_or_default();
 
-            if token_text.contains("<end_of_turn>") || token_text.contains("<start_of_turn>") {
+            tail.push_str(&piece);
+
+            // Check whether any stop sequence has appeared in the tail.
+            if let Some(stop_pos) = STOP_SEQS.iter().filter_map(|s| tail.find(s)).min() {
+                if stop_pos > 0 {
+                    app_clone
+                        .emit("llm-token", LlmToken { text: tail[..stop_pos].to_string(), done: false })
+                        .ok();
+                }
                 break;
             }
 
-            // Plaintext for output: strips special tokens, keeps regular text.
-            #[allow(deprecated)]
-            let text = model
-                .token_to_str(new_token, Special::Plaintext)
-                .unwrap_or_default();
-
-            app_clone
-                .emit("llm-token", LlmToken { text, done: false })
-                .ok();
+            // Emit the safe prefix — everything except the last `max_stop_len` chars,
+            // which we keep in `tail` in case a stop sequence straddles a token boundary.
+            if tail.len() > max_stop_len {
+                let cut = tail.len() - max_stop_len;
+                // Snap to a valid UTF-8 char boundary.
+                let cut = (0..=cut).rev().find(|&i| tail.is_char_boundary(i)).unwrap_or(0);
+                if cut > 0 {
+                    let to_emit = tail[..cut].to_string();
+                    tail = tail[cut..].to_string();
+                    app_clone
+                        .emit("llm-token", LlmToken { text: to_emit, done: false })
+                        .ok();
+                }
+            }
 
             batch.clear();
             batch.add(new_token, n_pos, &[0], true)
                 .map_err(|e| format!("Token batch add failed: {e}"))?;
             ctx.decode(&mut batch).map_err(|e| format!("Token decode failed: {e}"))?;
             n_pos += 1;
+        }
+
+        // Flush any buffered tail that didn't reach the emit threshold.
+        if !tail.is_empty() {
+            let stop_pos = STOP_SEQS.iter().filter_map(|s| tail.find(s)).min();
+            let to_emit = match stop_pos {
+                Some(pos) => tail[..pos].to_string(),
+                None => tail,
+            };
+            if !to_emit.is_empty() {
+                app_clone
+                    .emit("llm-token", LlmToken { text: to_emit, done: false })
+                    .ok();
+            }
         }
 
         app_clone

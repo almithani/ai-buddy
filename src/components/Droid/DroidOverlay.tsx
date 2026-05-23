@@ -7,6 +7,10 @@ import "./DroidOverlay.css";
 export default function DroidOverlay() {
   const [chatOpen, setChatOpen] = useState(false);
 
+  function handleMouseDown(_e: React.MouseEvent) {
+    getCurrentWindow().startDragging().catch(() => null);
+  }
+
   async function handleClick() {
     if (chatOpen) {
       await invoke("hide_chat");
@@ -17,10 +21,6 @@ export default function DroidOverlay() {
     }
   }
 
-  function handleDragStart() {
-    getCurrentWindow().startDragging().catch(() => null);
-  }
-
   // The droid state will be driven by the agent in milestone 2.
   // For now, idle.
   const state: DroidState = "idle";
@@ -29,7 +29,7 @@ export default function DroidOverlay() {
     <div
       className="overlay-root"
       onClick={handleClick}
-      onMouseDown={handleDragStart}
+      onMouseDown={handleMouseDown}
       title={chatOpen ? "Click to close chat" : "Click to open chat"}
     >
       <Droid state={state} size={90} />

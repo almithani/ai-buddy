@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Droid from "../components/Droid/Droid";
 
@@ -6,11 +7,18 @@ interface AccessibilityPermissionProps {
 }
 
 export default function AccessibilityPermission({ onNext }: AccessibilityPermissionProps) {
+  const [waiting, setWaiting] = useState(false);
+
   async function handleContinue() {
     await invoke("request_accessibility_permission");
-    // Give the user a moment to interact with the OS dialog, then proceed.
-    // In milestone 2 we'll poll for the actual permission grant.
-    setTimeout(onNext, 800);
+    setWaiting(true);
+    const poll = setInterval(async () => {
+      const trusted = await invoke<boolean>("check_accessibility_permission");
+      if (trusted) {
+        clearInterval(poll);
+        onNext();
+      }
+    }, 1000);
   }
 
   return (
@@ -38,9 +46,29 @@ export default function AccessibilityPermission({ onNext }: AccessibilityPermiss
           Just click <strong>Allow</strong>.
         </div>
 
-        <button className="ob-btn-primary" onClick={handleContinue}>
-          Continue →
+        <button
+          className="ob-btn-primary"
+          onClick={handleContinue}
+          disabled={waiting}
+        >
+          {waiting ? "Waiting for permission…" : "Continue →"}
         </button>
+
+        {waiting && (
+          <p style={{ textAlign: "center", fontSize: "0.8rem", opacity: 0.5, marginTop: "0.5rem" }}>
+            Waiting for you to grant access in System Settings…
+          </p>
+        )}
+
+        {!waiting && (
+          <button
+            className="ob-btn-ghost"
+            style={{ marginTop: "0.5rem", fontSize: "0.8rem", opacity: 0.5 }}
+            onClick={onNext}
+          >
+            Skip for now →
+          </button>
+        )}
       </div>
 
       <div className="ob-step-dots">

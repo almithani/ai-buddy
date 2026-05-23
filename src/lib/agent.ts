@@ -28,17 +28,13 @@ You have access to the following tools. Use them by outputting a JSON block like
 <tool_call>{"name": "tool_name", "args": {"key": "value"}}</tool_call>
 
 Available tools:
-- get_selected_text          — Read the user's currently highlighted/selected text
-- get_focused_text           — Read all text in the focused text field
 - replace_selected_text      — Replace the user's selected text. Args: {"text": "..."}
-- set_focused_text           — Replace all text in the focused field. Args: {"text": "..."}
 - read_file                  — Read a file the user dropped. Args: {"path": "..."}
 - store_preference           — Save a user preference for future tasks. Args: {"rule": "..."}
 - get_all_preferences        — List all stored user preferences
 
 Rules:
-- Always read text before editing it.
-- Prefer replace_selected_text over set_focused_text when a selection is available.
+- The user's selected text is shown in the conversation above — use it as the input for edits.
 - After editing, confirm briefly in plain language. No markdown.
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
@@ -61,20 +57,8 @@ async function executeTool(
   onStatus(`Using ${call.name}…`);
 
   switch (call.name) {
-    case "get_selected_text": {
-      const text = await invoke<string | null>("get_selected_text");
-      return text ?? "(no selection)";
-    }
-    case "get_focused_text": {
-      const text = await invoke<string | null>("get_focused_text");
-      return text ?? "(empty field)";
-    }
     case "replace_selected_text": {
       await invoke("replace_selected_text", { text: call.args.text ?? "" });
-      return "done";
-    }
-    case "set_focused_text": {
-      await invoke("set_focused_text", { text: call.args.text ?? "" });
       return "done";
     }
     case "store_preference": {
