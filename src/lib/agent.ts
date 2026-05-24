@@ -120,10 +120,19 @@ export async function runAgent(
   ];
 
   // Strip <tool_call> blocks (complete or in-progress) from the display text.
+  // Also holds back any trailing chars that could be the start of <tool_call>
+  // so partial tags never flash on screen.
   function visibleText(buf: string): string {
     let text = buf.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "");
     const idx = text.indexOf("<tool_call>");
     if (idx >= 0) text = text.slice(0, idx);
+    const tag = "<tool_call>";
+    for (let len = Math.min(tag.length - 1, text.length); len > 0; len--) {
+      if (tag.startsWith(text.slice(-len))) {
+        text = text.slice(0, -len);
+        break;
+      }
+    }
     return text;
   }
 
