@@ -37,6 +37,7 @@ Available tools:
 Rules:
 - The user's selected text is shown in the conversation above — use it as the input for edits.
 - After editing, confirm briefly in plain language. No markdown.
+- If replace_selected_text returns an error, the field is read-only. Output the edited text directly in your reply instead, and tell the user they can copy it.
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
 
@@ -59,8 +60,14 @@ async function executeTool(
 
   switch (call.name) {
     case "replace_selected_text": {
-      await invoke("replace_selected_text", { text: call.args.text ?? "" });
-      return "done";
+      const editedText = call.args.text ?? "";
+      try {
+        await invoke("replace_selected_text", { text: editedText });
+        return "done";
+      } catch {
+        // Signal the agent loop to output the text directly without another LLM round
+        return `__READ_ONLY__:${editedText}`;
+      }
     }
     case "store_preference": {
       const pref = await invoke<{ rule: string }>("store_preference", {
@@ -182,6 +189,21 @@ export async function runAgent(
     onDroidState("working");
     const toolResult = await executeTool(toolCall, onStatus).catch((e) => `Error: ${e}`);
     onStatus("");
+
+    // replace_selected_text short-circuits — no second LLM round either way
+    if (toolResult === "done") {
+      onReplace?.("");
+      onDroidState("done");
+      setTimeout(() => onDroidState("idle"), 1500);
+      return "Done — text updated.";
+    }
+    if (toolResult.startsWith("__READ_ONLY__:")) {
+      const editedText = toolResult.slice("__READ_ONLY__:".length);
+      onReplace?.("");
+      onDroidState("done");
+      setTimeout(() => onDroidState("idle"), 1500);
+      return `The field is read-only so I couldn't edit in place. Here's the updated version — you can copy it:\n\n${editedText}`;
+    }
 
     // Clear the streaming bubble before the next round streams the final reply
     onReplace?.("");

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import Droid from "../Droid/Droid";
 import { DroidState } from "../Droid/Droid";
+import DetailPanel from "../DetailPanel/DetailPanel";
 import { runAgent, ChatMessage } from "../../lib/agent";
 import "./ChatPanel.css";
 
@@ -32,6 +33,7 @@ export default function ChatPanel() {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resources, setResources] = useState<Resource[]>([]);
+  const [showDetail, setShowDetail] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingIdRef = useRef<number | null>(null);
@@ -44,27 +46,70 @@ export default function ChatPanel() {
     inputRef.current?.focus();
   }, []);
 
+  // Generates a greeting via the LLM (respects stored preferences).
+  // Falls back to a hardcoded string if the model isn't loaded yet.
+  async function streamGreeting(prompt: string) {
+    const isLoaded = await invoke<boolean>("is_model_loaded").catch(() => false);
+    const buddyId = nextId++;
+    streamingIdRef.current = buddyId;
+
+    if (!isLoaded) {
+      setMessages([{ id: buddyId, role: "buddy", text: "Hi! What can I help you with?", streaming: false }]);
+      streamingIdRef.current = null;
+      return;
+    }
+
+    setMessages([{ id: buddyId, role: "buddy", text: "", streaming: true }]);
+    try {
+      const finalText = await runAgent(prompt, [], {
+        onToken: (token) => {
+          setMessages((m) =>
+            m.map((msg) => msg.id === buddyId ? { ...msg, text: msg.text + token } : msg)
+          );
+        },
+        onStatus: () => {},
+        onDroidState: () => {},
+        onReplace: (text) => {
+          setMessages((m) =>
+            m.map((msg) => msg.id === buddyId ? { ...msg, text } : msg)
+          );
+        },
+      });
+      setMessages((m) =>
+        m.map((msg) => msg.id === buddyId ? { ...msg, text: finalText, streaming: false } : msg)
+      );
+    } catch {
+      setMessages((m) =>
+        m.map((msg) =>
+          msg.id === buddyId ? { ...msg, text: "Hi! What can I help you with?", streaming: false } : msg
+        )
+      );
+    } finally {
+      streamingIdRef.current = null;
+    }
+  }
+
   // Check AX permission on mount. If missing, poll every 2 s until granted,
   // then swap the warning for the normal greeting automatically.
   useEffect(() => {
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     invoke<boolean>("check_accessibility_permission").then((trusted) => {
-      setMessages([{
-        id: nextId++,
-        role: "buddy",
-        text: trusted
-          ? "Hi! What can I help you with?"
-          : "I need **Accessibility permission** to read and edit text in other apps.\n\nGo to **System Settings → Privacy & Security → Accessibility** and add AI Buddy, then come back.",
-      }]);
+      if (trusted) {
+        streamGreeting("Greet the user. Keep it to one sentence.");
+      } else {
+        setMessages([{
+          id: nextId++,
+          role: "buddy",
+          text: "I need **Accessibility permission** to read and edit text in other apps.\n\nGo to **System Settings → Privacy & Security → Accessibility** and add AI Buddy, then come back.",
+        }]);
 
-      if (!trusted) {
         pollInterval = setInterval(async () => {
           const nowTrusted = await invoke<boolean>("check_accessibility_permission");
           if (nowTrusted) {
             clearInterval(pollInterval!);
             pollInterval = null;
-            setMessages([{ id: nextId++, role: "buddy", text: "Hi! What can I help you with?" }]);
+            streamGreeting("Greet the user. Keep it to one sentence.");
           }
         }, 2000);
       }
@@ -78,7 +123,6 @@ export default function ChatPanel() {
     // get_pending_text() so there is no race with the window becoming visible.
     const unlisten = listen("hotkey-triggered", async () => {
       const { text } = await invoke<{ text: string; debug: string }>("get_pending_text");
-      setMessages([{ id: nextId++, role: "buddy", text: "How can I help?" }]);
       setResources(
         text
           ? [{ id: nextId++, type: "text", label: text.slice(0, 50) + (text.length > 50 ? "…" : ""), content: text }]
@@ -86,6 +130,7 @@ export default function ChatPanel() {
       );
       setInput("");
       setBusy(false);
+      await streamGreeting("Greet the user briefly and let them know you're ready to help.");
       setTimeout(() => inputRef.current?.focus(), 50);
     });
     return () => { unlisten.then((fn) => fn()); };
@@ -221,6 +266,8 @@ export default function ChatPanel() {
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
     >
+      {showDetail && <DetailPanel onClose={() => setShowDetail(false)} />}
+
       <div className="chat-header" onMouseDown={handleDragHeaderStart}>
         <div className="chat-header-droid">
           <Droid state={droidState} size={32} />
@@ -229,7 +276,10 @@ export default function ChatPanel() {
             {status && <span className="chat-status">{status}</span>}
           </div>
         </div>
-        <button className="chat-close-btn" onClick={handleClose} title="Close">✕</button>
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          <button className="chat-close-btn" onClick={() => setShowDetail((d) => !d)} title="Memory">≡</button>
+          <button className="chat-close-btn" onClick={handleClose} title="Close">✕</button>
+        </div>
       </div>
 
       <div className="chat-messages">

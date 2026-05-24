@@ -280,7 +280,11 @@ mod mac {
             let value = cf_str(text);
             let err = AXUIElementSetAttributeValue(el, attr.as_concrete_TypeRef(), value.as_CFTypeRef());
             CFRelease(el as *const c_void);
-            if err == AX_SUCCESS { Ok(()) } else { Err(format!("AXSetAttributeValue failed: {err}")) }
+            if err == AX_SUCCESS {
+                Ok(())
+            } else {
+                Err("The text field is read-only and cannot be edited.".to_string())
+            }
         }
     }
 }
