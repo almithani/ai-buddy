@@ -109,6 +109,12 @@ pub async fn generate_response(
             .str_to_token(&prompt, AddBos::Always)
             .map_err(|e| format!("Tokenisation failed: {e}"))?;
         let n_input = tokens.len();
+        const N_CTX: usize = 4096;
+        if n_input + max_new as usize > N_CTX {
+            return Err(format!(
+                "Input is too long ({n_input} tokens). Shorten the file or message so the total fits in the {N_CTX}-token context window."
+            ));
+        }
 
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(NonZeroU32::new(4096).unwrap()))

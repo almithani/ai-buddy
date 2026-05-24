@@ -21,6 +21,7 @@ interface Resource {
   type: "text" | "file";
   label: string;
   content: string;
+  path?: string; // full filesystem path for dropped files
 }
 
 let nextId = 1;
@@ -160,7 +161,15 @@ export default function ChatPanel() {
 
     const resourceContext = capturedResources.length > 0
       ? capturedResources
-          .map((r) => r.type === "text" ? `Selected text:\n${r.content}` : `File: ${r.label}`)
+          .map((r) => {
+            if (r.type === "text") return `Selected text:\n${r.content}`;
+            // Only expose the full path for files whose content was actually read.
+            // For images/PDFs/binaries the content is a placeholder starting with "[",
+            // and including the path just causes the agent to try read_file on them.
+            const contentIsReadable = !r.content.startsWith("[");
+            const pathNote = r.path && contentIsReadable ? ` (path: ${r.path})` : "";
+            return `File "${r.label}"${pathNote}:\n${r.content}`;
+          })
           .join("\n\n")
       : undefined;
 
@@ -240,19 +249,63 @@ export default function ChatPanel() {
     }
   }
 
+  // Tauri intercepts OS file drops before the browser sees them, so
+  // e.dataTransfer.files is always empty for Finder drags. We use the
+  // native onDragDropEvent instead, which gives us real filesystem paths.
+  useEffect(() => {
+    const IMAGE_EXTS = new Set(["png","jpg","jpeg","gif","webp","bmp","svg","ico","tiff","heic"]);
+    const TEXT_EXTS  = new Set([
+      "txt","md","markdown","json","yaml","yml","toml","csv","tsv",
+      "js","ts","tsx","jsx","html","css","xml","sh","bash","zsh","py",
+      "rs","go","java","c","cpp","h","rb","swift","kt","sql","graphql",
+      "env","gitignore","log","tf","lua","r","php","vue","svelte",
+    ]);
+
+    const unlistenPromise = getCurrentWindow().onDragDropEvent(async (event) => {
+      const p = event.payload;
+      if (p.type === "enter") {
+        setDragging(true);
+      } else if (p.type === "leave") {
+        setDragging(false);
+      } else if (p.type === "drop") {
+        setDragging(false);
+        if (p.paths.length === 0) return;
+
+        const newResources: Resource[] = await Promise.all(
+          p.paths.map(async (path) => {
+            const name = path.split("/").pop() ?? path;
+            const ext  = name.split(".").pop()?.toLowerCase() ?? "";
+
+            let content: string;
+            if (IMAGE_EXTS.has(ext)) {
+              content = "[Image file — image content cannot be sent to the model]";
+            } else if (ext === "pdf") {
+              content = "[PDF file — PDF text extraction is not yet supported]";
+            } else if (TEXT_EXTS.has(ext)) {
+              try {
+                content = await invoke<string>("read_file", { path });
+              } catch {
+                content = `[Could not read: ${name}]`;
+              }
+            } else {
+              content = "[Binary file — cannot read content]";
+            }
+
+            return { id: nextId++, type: "file" as const, label: name, content, path };
+          })
+        );
+
+        setResources((r) => [...r, ...newResources]);
+        inputRef.current?.focus();
+      }
+    });
+
+    return () => { unlistenPromise.then((fn) => fn()); };
+  }, []);
+
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
-    const newResources: Resource[] = files.map((f) => ({
-      id: nextId++,
-      type: "file",
-      label: f.name,
-      content: f.name,
-    }));
-    setResources((r) => [...r, ...newResources]);
-    inputRef.current?.focus();
   }
 
   const isThinking = droidState === "thinking" && !messages.find(

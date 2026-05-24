@@ -127,6 +127,28 @@ fn get_pending_text(state: tauri::State<'_, PendingText>) -> PendingCapture {
     capture
 }
 
+#[tauri::command]
+fn read_file(path: String) -> Result<String, String> {
+    let p = std::path::Path::new(&path);
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let name = p.file_name().unwrap_or_default().to_string_lossy();
+
+    let image_exts = ["png","jpg","jpeg","gif","webp","bmp","svg","ico","tiff","heic"];
+    if image_exts.contains(&ext.as_str()) {
+        return Ok(format!("[Image file '{name}' — image content cannot be read as text]"));
+    }
+    if ext == "pdf" {
+        return Ok(format!("[PDF file '{name}' — PDF text extraction is not supported]"));
+    }
+
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if content.len() > 2_500 {
+        Ok(format!("{}\n… (truncated — file too large for context window)", &content[..2_500]))
+    } else {
+        Ok(content)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -227,6 +249,8 @@ pub fn run() {
             // Accessibility
             accessibility::check_accessibility_permission,
             accessibility::replace_selected_text,
+            // Files
+            read_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

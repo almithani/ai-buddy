@@ -38,6 +38,7 @@ Rules:
 - The user's selected text is shown in the conversation above — use it as the input for edits.
 - After editing, confirm briefly in plain language. No markdown.
 - If replace_selected_text returns an error, the field is read-only. Output the edited text directly in your reply instead, and tell the user they can copy it.
+- If a file attachment contains "[Image file", respond only with: "Image input is not supported yet." Do not attempt to read or describe the image.
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
 
@@ -81,8 +82,13 @@ async function executeTool(
       return prefs.map((p) => `- ${p.rule}`).join("\n");
     }
     case "read_file": {
-      // Basic text read — will be extended in later milestone
-      return `(file reading not yet implemented — milestone 3)`;
+      const path = call.args.path ?? "";
+      if (!path) return "No file path provided.";
+      try {
+        return await invoke<string>("read_file", { path });
+      } catch (e) {
+        return `Could not read file: ${e}`;
+      }
     }
     default:
       return `Unknown tool: ${call.name}`;

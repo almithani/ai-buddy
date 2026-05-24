@@ -50,6 +50,17 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibil
 
 ## Unfinished Features
 
+### Image input via Gemma 4 multimodal (not started)
+- Gemma 4 is multimodal but our llama-cpp-2 integration is text-only
+- Requires:
+  1. Download the `.mmproj` (multimodal projection) file alongside the main GGUF
+  2. Load the clip/vision model in Rust at startup
+  3. Encode dropped images via llama-cpp's LLaVA API into embeddings
+  4. Pass encoded image embeddings into the context before text tokens
+  5. Frontend: send image as base64 or raw bytes from the resource chip to Rust
+- Reference: llama-cpp LLaVA C API (`llava_image_embed_make_with_bytes`, `llava_eval_image_embed`)
+
+
 ### Detail Panel (not started)
 - Spec calls for a side panel with: Memory tab (view/edit/delete rules), History, About/settings
 - The `[⊞]` button in ChatPanel.tsx exists but does nothing
