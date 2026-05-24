@@ -12,6 +12,7 @@ export interface AgentCallbacks {
   onToken: (token: string) => void;
   onStatus: (status: string) => void;
   onDroidState: (state: DroidAgentState) => void;
+  onReplace?: (text: string) => void;
 }
 
 export type DroidAgentState = "thinking" | "working" | "done" | "error" | "idle";
@@ -101,7 +102,7 @@ export async function runAgent(
   callbacks: AgentCallbacks,
   resourceContext?: string
 ): Promise<string> {
-  const { onToken, onStatus, onDroidState } = callbacks;
+  const { onToken, onStatus, onDroidState, onReplace } = callbacks;
 
   const prefs = await invoke<Array<{ rule: string }>>("get_all_preferences").catch(
     () => []
@@ -118,11 +119,20 @@ export async function runAgent(
     { role: "user", content: finalUserMessage },
   ];
 
+  // Strip <tool_call> blocks (complete or in-progress) from the display text.
+  function visibleText(buf: string): string {
+    let text = buf.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "");
+    const idx = text.indexOf("<tool_call>");
+    if (idx >= 0) text = text.slice(0, idx);
+    return text;
+  }
+
   // Agentic loop — up to 5 tool-call rounds
   for (let round = 0; round < 5; round++) {
     onDroidState("thinking");
 
     let buffer = "";
+    let emitted = 0;
     let unlisten: UnlistenFn | null = null;
 
     const tokenDone = new Promise<void>((resolve) => {
@@ -133,7 +143,11 @@ export async function runAgent(
           return;
         }
         buffer += event.payload.text;
-        onToken(event.payload.text);
+        const display = visibleText(buffer);
+        if (display.length > emitted) {
+          onToken(display.slice(emitted));
+          emitted = display.length;
+        }
       }).then((fn) => {
         unlisten = fn;
       });
@@ -152,14 +166,16 @@ export async function runAgent(
       // No tool call — final answer
       onDroidState("done");
       setTimeout(() => onDroidState("idle"), 1500);
-      // Strip any leaked <tool_call> tags from output
-      return buffer.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "").trim();
+      return visibleText(buffer).trim();
     }
 
     // Execute the tool
     onDroidState("working");
     const toolResult = await executeTool(toolCall, onStatus).catch((e) => `Error: ${e}`);
     onStatus("");
+
+    // Clear the streaming bubble before the next round streams the final reply
+    onReplace?.("");
 
     // Add the round to message history and continue
     messages.push({ role: "model", content: buffer });

@@ -156,6 +156,13 @@ export default function ChatPanel() {
           };
           setDroidState(map[s] ?? "idle");
         },
+        onReplace: (text) => {
+          setMessages((m) =>
+            m.map((msg) =>
+              msg.id === buddyId ? { ...msg, text } : msg
+            )
+          );
+        },
       }, resourceContext);
 
       // Finalise the streaming message with the clean final text
