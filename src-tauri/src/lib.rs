@@ -18,8 +18,6 @@ pub struct PendingCapture {
 /// Capture from the last hotkey press — text + diagnostic log.
 pub struct PendingText(pub std::sync::Mutex<PendingCapture>);
 
-/// Fixed offset from droid top-left to chat top-left, set when chat is first shown.
-pub struct ChatOffset(pub std::sync::Mutex<Option<(i32, i32)>>);
 
 #[tauri::command]
 fn check_onboarding_complete(app: tauri::AppHandle) -> bool {
@@ -52,11 +50,7 @@ fn complete_onboarding(app: tauri::AppHandle) -> Result<(), String> {
 
 fn show_droid_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("droid") {
-        if let Ok(Some(monitor)) = w.current_monitor() {
-            let scale = monitor.scale_factor();
-            let margin = (8.0 * scale) as i32;
-            w.set_position(tauri::PhysicalPosition::new(margin, margin)).ok();
-        }
+        w.set_position(tauri::LogicalPosition::new(8.0, 8.0)).ok();
         w.show().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -70,15 +64,13 @@ fn show_chat_impl(app: &tauri::AppHandle) -> Result<(), String> {
                 if let Ok(pos) = droid.outer_position() {
                     if let Ok(Some(monitor)) = droid.current_monitor() {
                         let scale = monitor.scale_factor();
-                        let screen_h = monitor.size().height as f64;
-                        let droid_size = 100.0 * scale;
-                        let chat_h = 520.0 * scale;
-                        let gap = 8.0 * scale;
-                        // To the right of droid, tops aligned
-                        let x = (pos.x as f64 + droid_size + gap) as i32;
-                        let y = (pos.y as f64).min(screen_h - chat_h) as i32;
-                        w.set_position(tauri::PhysicalPosition::new(x, y)).ok();
-                        *app.state::<ChatOffset>().0.lock().unwrap() = Some((x - pos.x, y - pos.y));
+                        let screen_h_logical = monitor.size().height as f64 / scale;
+                        let droid_log_x = pos.x as f64 / scale;
+                        let droid_log_y = pos.y as f64 / scale;
+                        // 108 logical px to the right (100 droid width + 8 gap), tops aligned
+                        let chat_x = droid_log_x + 108.0;
+                        let chat_y = droid_log_y.min(screen_h_logical - 520.0);
+                        w.set_position(tauri::LogicalPosition::new(chat_x, chat_y)).ok();
                     }
                 }
             }
@@ -175,21 +167,19 @@ pub fn run() {
                 debug: String::new(),
             })));
 
-            // --- Chat offset (chat pos relative to droid; set on first show) ---
-            app.manage(ChatOffset(std::sync::Mutex::new(None)));
-
-            // --- Droid events: move chat when droid drags; raise chat when droid clicked ---
+            // --- Droid moved: keep chat tethered 108 logical px to the right ---
             if let Some(droid_w) = app.get_webview_window("droid") {
                 let app_droid = app.handle().clone();
                 droid_w.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Moved(new_pos) = event {
+                    if let tauri::WindowEvent::Moved(new_phys) = event {
                         if let Some(chat) = app_droid.get_webview_window("chat") {
                             if chat.is_visible().unwrap_or(false) {
-                                if let Ok(guard) = app_droid.state::<ChatOffset>().0.lock() {
-                                    if let Some((dx, dy)) = *guard {
-                                        chat.set_position(tauri::PhysicalPosition::new(
-                                            new_pos.x + dx,
-                                            new_pos.y + dy,
+                                if let Some(droid) = app_droid.get_webview_window("droid") {
+                                    if let Ok(Some(monitor)) = droid.current_monitor() {
+                                        let scale = monitor.scale_factor();
+                                        chat.set_position(tauri::LogicalPosition::new(
+                                            new_phys.x as f64 / scale + 108.0,
+                                            new_phys.y as f64 / scale,
                                         )).ok();
                                     }
                                 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import Droid from "../Droid/Droid";
@@ -190,19 +190,23 @@ export default function ChatPanel() {
   async function handleDragHeaderStart(e: React.MouseEvent) {
     e.preventDefault();
     const droid = new WebviewWindow("droid");
-    const droidPos = await droid.outerPosition();
+    const droidPhys = await droid.outerPosition();
+    // Convert physical → logical using current monitor's scale
+    const scale = window.devicePixelRatio;
+    const startDroidLogX = droidPhys.x / scale;
+    const startDroidLogY = droidPhys.y / scale;
+    // e.screenX/Y is already in logical pixels (macOS points) — no scale needed
     const startX = e.screenX;
     const startY = e.screenY;
-    const scale = window.devicePixelRatio;
     let moving = false;
 
     function onMouseMove(ev: MouseEvent) {
       if (moving) return;
       moving = true;
-      const dx = Math.round((ev.screenX - startX) * scale);
-      const dy = Math.round((ev.screenY - startY) * scale);
-      droid.setPosition(new PhysicalPosition(droidPos.x + dx, droidPos.y + dy))
-        .finally(() => { moving = false; });
+      droid.setPosition(new LogicalPosition(
+        startDroidLogX + (ev.screenX - startX),
+        startDroidLogY + (ev.screenY - startY),
+      )).finally(() => { moving = false; });
     }
     function onMouseUp() {
       document.removeEventListener("mousemove", onMouseMove);
