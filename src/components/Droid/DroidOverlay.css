@@ -2,8 +2,10 @@
   width: 100vw;
   height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   background: transparent;
   cursor: pointer;
   -webkit-app-region: no-drag;
@@ -16,4 +18,29 @@
 .overlay-root:active .droid-wrapper {
   transform: scale(0.93);
   transition: transform 0.1s ease;
+}
+
+.overlay-hint {
+  font-size: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  color: rgba(30, 30, 30, 0.55);
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.9), 0 0 6px rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  user-select: none;
+}
+
+.overlay-root:hover .overlay-hint {
+  color: rgba(30, 30, 30, 0.8);
+}
+
+/* Drag-over state */
+.overlay-dragging .droid-wrapper {
+  filter: brightness(1.25) drop-shadow(0 0 12px rgba(120, 180, 255, 0.7));
+  transform: scale(1.06);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.overlay-dragging .overlay-hint {
+  color: rgba(120, 200, 255, 0.9);
 }

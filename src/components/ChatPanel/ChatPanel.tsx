@@ -120,6 +120,50 @@ export default function ChatPanel() {
   }, []);
 
   useEffect(() => {
+    const IMAGE_EXTS_SET = new Set(["png","jpg","jpeg","gif","webp","bmp","svg","ico","tiff","heic"]);
+    const TEXT_EXTS_SET  = new Set([
+      "txt","md","markdown","json","yaml","yml","toml","csv","tsv",
+      "js","ts","tsx","jsx","html","css","xml","sh","bash","zsh","py",
+      "rs","go","java","c","cpp","h","rb","swift","kt","sql","graphql",
+      "env","gitignore","log","tf","lua","r","php","vue","svelte",
+    ]);
+
+    const unlisten2 = listen<{ paths: string[] }>("droid-files-dropped", async (event) => {
+      const paths = event.payload.paths;
+      if (paths.length === 0) return;
+
+      const newResources: Resource[] = await Promise.all(
+        paths.map(async (path) => {
+          const name = path.split("/").pop() ?? path;
+          const ext  = name.split(".").pop()?.toLowerCase() ?? "";
+
+          let content: string;
+          if (IMAGE_EXTS_SET.has(ext)) {
+            content = "[Image file — image content cannot be sent to the model]";
+          } else if (ext === "pdf") {
+            content = "[PDF file — PDF text extraction is not yet supported]";
+          } else if (TEXT_EXTS_SET.has(ext)) {
+            try {
+              content = await invoke<string>("read_file", { path });
+            } catch {
+              content = `[Could not read: ${name}]`;
+            }
+          } else {
+            content = "[Binary file — cannot read content]";
+          }
+
+          return { id: nextId++, type: "file" as const, label: name, content, path };
+        })
+      );
+
+      setResources((r) => [...r, ...newResources]);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    });
+
+    return () => { unlisten2.then((fn) => fn()); };
+  }, []);
+
+  useEffect(() => {
     // "hotkey-triggered" is a bare signal — no payload. We pull the text via
     // get_pending_text() so there is no race with the window becoming visible.
     const unlisten = listen("hotkey-triggered", async () => {
