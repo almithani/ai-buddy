@@ -24,6 +24,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
+html,
 body {
   background: transparent;
   overflow: hidden;
@@ -36,6 +37,7 @@ body {
   height: 100vh;
   display: flex;
   align-items: stretch;
+  background: transparent;
 }
 
 button {
