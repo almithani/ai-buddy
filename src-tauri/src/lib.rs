@@ -4,9 +4,11 @@ mod accessibility;
 mod download;
 mod llm;
 mod memory;
+mod transcription;
 
 use memory::DbState;
 use llm::LlmState;
+use transcription::{WhisperState, TranscriptionHandle};
 use accessibility::PrevApp;
 
 #[derive(Clone, serde::Serialize)]
@@ -43,6 +45,18 @@ fn complete_onboarding(app: tauri::AppHandle) -> Result<(), String> {
         let state = app2.state::<LlmState>();
         if let Err(e) = llm::load_model(app2.clone(), state) {
             eprintln!("Model load error: {e}");
+        }
+    });
+
+    let app3 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Ok(p) = transcription::whisper_model_path(&app3) {
+            if p.exists() {
+                let state = app3.state::<WhisperState>();
+                if let Err(e) = transcription::load_whisper(app3.clone(), state) {
+                    eprintln!("Whisper load error: {e}");
+                }
+            }
         }
     });
 
@@ -160,6 +174,10 @@ pub fn run() {
             // --- LLM state ---
             app.manage(LlmState(std::sync::Mutex::new(None)));
 
+            // --- Whisper state ---
+            app.manage(WhisperState(std::sync::Mutex::new(None)));
+            app.manage(TranscriptionHandle(std::sync::Mutex::new(None)));
+
             // --- Accessibility: previous frontmost app PID ---
             app.manage(PrevApp(std::sync::Mutex::new(None)));
 
@@ -237,6 +255,18 @@ pub fn run() {
                         _ => eprintln!("Model file not found — download it via the chat panel."),
                     }
                 });
+
+                let app3 = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(p) = transcription::whisper_model_path(&app3) {
+                        if p.exists() {
+                            let state = app3.state::<WhisperState>();
+                            if let Err(e) = transcription::load_whisper(app3.clone(), state) {
+                                eprintln!("Whisper load error: {e}");
+                            }
+                        }
+                    }
+                });
             } else {
                 if let Some(w) = app.get_webview_window("onboarding") {
                     w.show()?;
@@ -258,10 +288,19 @@ pub fn run() {
             download::check_model_exists,
             download::start_model_download,
             download::cancel_model_download,
+            download::start_whisper_download,
+            download::cancel_whisper_download,
             // LLM
             llm::load_model,
             llm::is_model_loaded,
             llm::generate_response,
+            // Transcription
+            transcription::check_whisper_exists,
+            transcription::is_whisper_loaded,
+            transcription::load_whisper,
+            transcription::is_transcribing,
+            transcription::start_transcription,
+            transcription::stop_transcription,
             // Memory
             memory::store_preference,
             memory::get_all_preferences,

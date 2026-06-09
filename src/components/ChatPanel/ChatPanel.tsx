@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import Droid from "../Droid/Droid";
 import { DroidState } from "../Droid/Droid";
 import DetailPanel from "../DetailPanel/DetailPanel";
+import TranscriptPanel from "../TranscriptPanel/TranscriptPanel";
 import { runAgent, ChatMessage } from "../../lib/agent";
 import "./ChatPanel.css";
 
@@ -37,6 +38,7 @@ export default function ChatPanel() {
   const [busy, setBusy] = useState(false);
   const [resources, setResources] = useState<Resource[]>([]);
   const [showDetail, setShowDetail] = useState(false);
+  const [view, setView] = useState<"chat" | "transcript">("chat");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingIdRef = useRef<number | null>(null);
@@ -185,6 +187,15 @@ export default function ChatPanel() {
 
   async function handleClose() {
     await invoke("hide_chat");
+  }
+
+  function addTranscriptToChat(text: string) {
+    setResources((r) => [
+      ...r,
+      { id: nextId++, type: "text", label: "Meeting transcript", content: text },
+    ]);
+    setView("chat");
+    setTimeout(() => inputRef.current?.focus(), 50);
   }
 
   async function handleDragHeaderStart(e: React.MouseEvent) {
@@ -406,6 +417,25 @@ export default function ChatPanel() {
         </div>
       </div>
 
+      <div className="chat-tab-bar">
+        <button
+          className={`chat-tab ${view === "chat" ? "chat-tab-active" : ""}`}
+          onClick={() => setView("chat")}
+        >
+          Chat
+        </button>
+        <button
+          className={`chat-tab ${view === "transcript" ? "chat-tab-active" : ""}`}
+          onClick={() => setView("transcript")}
+        >
+          Transcript
+        </button>
+      </div>
+
+      {view === "transcript" ? (
+        <TranscriptPanel onSendToChat={addTranscriptToChat} />
+      ) : (
+      <>
       <div className="chat-messages">
         {messages.map((msg) => (
           <div key={msg.id} className={`chat-msg chat-msg-${msg.role}`}>
@@ -471,6 +501,9 @@ export default function ChatPanel() {
           ↑
         </button>
       </div>
+      </>
+      )}
+
     </div>
   );
 }

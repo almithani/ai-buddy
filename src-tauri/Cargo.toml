@@ -11,6 +11,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+cc          = "1"
 
 [dependencies]
 tauri                       = { version = "2", features = ["macos-private-api"] }
@@ -22,6 +23,7 @@ reqwest      = { version = "0.12", features = ["stream", "native-tls"] }
 futures-util = "0.3"
 tokio        = { version = "1", features = ["fs", "io-util"] }
 llama-cpp-2  = "0"
+whisper-rs   = "0.13"
 
 # core-foundation is a transitive dep of tauri on macOS, but accessibility.rs
 # imports it directly so it must be an explicit dependency.

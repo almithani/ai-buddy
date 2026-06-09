@@ -49,6 +49,31 @@
   background: var(--bg-input);
 }
 
+/* ── Tab bar ── */
+.chat-tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chat-tab {
+  flex: 1;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.chat-tab:hover { color: var(--text); }
+.chat-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 /* ── Messages ── */
 .chat-messages {
   flex: 1;
