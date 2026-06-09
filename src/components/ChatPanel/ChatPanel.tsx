@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import ReactMarkdown from "react-markdown";
 import Droid from "../Droid/Droid";
@@ -185,8 +187,29 @@ export default function ChatPanel() {
     await invoke("hide_chat");
   }
 
-  function handleDragHeaderStart() {
-    getCurrentWindow().startDragging().catch(() => null);
+  async function handleDragHeaderStart(e: React.MouseEvent) {
+    e.preventDefault();
+    const droid = new WebviewWindow("droid");
+    const droidPos = await droid.outerPosition();
+    const startX = e.screenX;
+    const startY = e.screenY;
+    const scale = window.devicePixelRatio;
+    let moving = false;
+
+    function onMouseMove(ev: MouseEvent) {
+      if (moving) return;
+      moving = true;
+      const dx = Math.round((ev.screenX - startX) * scale);
+      const dy = Math.round((ev.screenY - startY) * scale);
+      droid.setPosition(new PhysicalPosition(droidPos.x + dx, droidPos.y + dy))
+        .finally(() => { moving = false; });
+    }
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
   }
 
   function removeResource(id: number) {

@@ -3,4 +3,5 @@
 # the CLT's base include path, so we point CXXFLAGS at them explicitly.
 [env]
 MACOSX_DEPLOYMENT_TARGET = "15.0"
-CXXFLAGS = "-I/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1 -I/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include"
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+CXXFLAGS = "-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1"

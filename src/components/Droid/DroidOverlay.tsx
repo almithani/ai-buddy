@@ -6,21 +6,10 @@ import Droid, { DroidState } from "./Droid";
 import "./DroidOverlay.css";
 
 export default function DroidOverlay() {
-  const [chatOpen, setChatOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   function handleMouseDown(_e: React.MouseEvent) {
     getCurrentWindow().startDragging().catch(() => null);
-  }
-
-  async function handleClick() {
-    if (chatOpen) {
-      await invoke("hide_chat");
-      setChatOpen(false);
-    } else {
-      await invoke("show_chat");
-      setChatOpen(true);
-    }
   }
 
   useEffect(() => {
@@ -35,7 +24,6 @@ export default function DroidOverlay() {
         if (p.paths.length === 0) return;
         // Open chat first, then tell it about the files
         await invoke("show_chat");
-        setChatOpen(true);
         // Small delay to let the chat window mount its listener
         await new Promise((r) => setTimeout(r, 120));
         await emit("droid-files-dropped", { paths: p.paths });
@@ -49,9 +37,7 @@ export default function DroidOverlay() {
   return (
     <div
       className={`overlay-root ${dragging ? "overlay-dragging" : ""}`}
-      onClick={handleClick}
       onMouseDown={handleMouseDown}
-      title={chatOpen ? "Click to close chat" : "Click to open chat"}
     >
       <Droid state={state} size={90} />
       <span className="overlay-hint">⌥ Space</span>

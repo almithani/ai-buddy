@@ -18,6 +18,9 @@ pub struct PendingCapture {
 /// Capture from the last hotkey press — text + diagnostic log.
 pub struct PendingText(pub std::sync::Mutex<PendingCapture>);
 
+/// Fixed offset from droid top-left to chat top-left, set when chat is first shown.
+pub struct ChatOffset(pub std::sync::Mutex<Option<(i32, i32)>>);
+
 #[tauri::command]
 fn check_onboarding_complete(app: tauri::AppHandle) -> bool {
     let Ok(data_dir) = app.path().app_data_dir() else { return false };
@@ -50,11 +53,9 @@ fn complete_onboarding(app: tauri::AppHandle) -> Result<(), String> {
 fn show_droid_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("droid") {
         if let Ok(Some(monitor)) = w.current_monitor() {
-            let size = monitor.size();
             let scale = monitor.scale_factor();
-            let x = ((size.width as f64 / scale) - 120.0) * scale;
-            let y = ((size.height as f64 / scale) - 120.0) * scale;
-            w.set_position(tauri::PhysicalPosition::new(x as i32, y as i32)).ok();
+            let margin = (8.0 * scale) as i32;
+            w.set_position(tauri::PhysicalPosition::new(margin, margin)).ok();
         }
         w.show().map_err(|e| e.to_string())?;
     }
@@ -63,20 +64,22 @@ fn show_droid_window(app: &tauri::AppHandle) -> Result<(), String> {
 
 fn show_chat_impl(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("chat") {
-        if let Some(droid) = app.get_webview_window("droid") {
-            if let Ok(pos) = droid.outer_position() {
-                if let Ok(Some(monitor)) = droid.current_monitor() {
-                    let scale = monitor.scale_factor();
-                    let screen_h = monitor.size().height as f64;
-                    let chat_w = 360.0 * scale;
-                    let chat_h = 520.0 * scale;
-                    let x = (pos.x as f64 - chat_w + 100.0 * scale).max(0.0);
-                    let y = if pos.y as f64 - chat_h > 0.0 {
-                        pos.y as f64 - chat_h - 8.0 * scale
-                    } else {
-                        (screen_h - chat_h - 120.0 * scale).max(0.0)
-                    };
-                    w.set_position(tauri::PhysicalPosition::new(x as i32, y as i32)).ok();
+        // Only reposition when chat is not already visible; otherwise just focus it.
+        if !w.is_visible().unwrap_or(false) {
+            if let Some(droid) = app.get_webview_window("droid") {
+                if let Ok(pos) = droid.outer_position() {
+                    if let Ok(Some(monitor)) = droid.current_monitor() {
+                        let scale = monitor.scale_factor();
+                        let screen_h = monitor.size().height as f64;
+                        let droid_size = 100.0 * scale;
+                        let chat_h = 520.0 * scale;
+                        let gap = 8.0 * scale;
+                        // To the right of droid, tops aligned
+                        let x = (pos.x as f64 + droid_size + gap) as i32;
+                        let y = (pos.y as f64).min(screen_h - chat_h) as i32;
+                        w.set_position(tauri::PhysicalPosition::new(x, y)).ok();
+                        *app.state::<ChatOffset>().0.lock().unwrap() = Some((x - pos.x, y - pos.y));
+                    }
                 }
             }
         }
@@ -171,6 +174,30 @@ pub fn run() {
                 text: String::new(),
                 debug: String::new(),
             })));
+
+            // --- Chat offset (chat pos relative to droid; set on first show) ---
+            app.manage(ChatOffset(std::sync::Mutex::new(None)));
+
+            // --- Droid events: move chat when droid drags; raise chat when droid clicked ---
+            if let Some(droid_w) = app.get_webview_window("droid") {
+                let app_droid = app.handle().clone();
+                droid_w.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Moved(new_pos) = event {
+                        if let Some(chat) = app_droid.get_webview_window("chat") {
+                            if chat.is_visible().unwrap_or(false) {
+                                if let Ok(guard) = app_droid.state::<ChatOffset>().0.lock() {
+                                    if let Some((dx, dy)) = *guard {
+                                        chat.set_position(tauri::PhysicalPosition::new(
+                                            new_pos.x + dx,
+                                            new_pos.y + dy,
+                                        )).ok();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             // --- Global hotkey: ⌥ Space ---
             {
