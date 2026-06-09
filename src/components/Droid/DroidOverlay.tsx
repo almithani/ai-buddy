@@ -8,8 +8,25 @@ import "./DroidOverlay.css";
 export default function DroidOverlay() {
   const [dragging, setDragging] = useState(false);
 
-  function handleMouseDown(_e: React.MouseEvent) {
+  function handleMouseDown(e: React.MouseEvent) {
     getCurrentWindow().startDragging().catch(() => null);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let moved = false;
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 4) {
+        moved = true;
+        document.removeEventListener("mousemove", onMouseMove);
+      }
+    }
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      if (!moved) invoke("show_chat").catch(() => null);
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
   }
 
   useEffect(() => {

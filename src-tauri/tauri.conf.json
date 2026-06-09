@@ -33,7 +33,8 @@
         "decorations": false,
         "transparent": true,
         "skipTaskbar": true,
-        "shadow": false
+        "shadow": false,
+        "acceptFirstMouse": true
       },
       {
         "label": "chat",
