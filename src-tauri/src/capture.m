@@ -125,12 +125,28 @@ API_AVAILABLE(macos(13.0))
     _cb     = cb;
     _ctx    = ctx;
     _active = YES;
+    // AVAudioEngine must be set up and started on the main thread.
+    dispatch_async(dispatch_get_main_queue(), ^{ [self _setupEngine]; });
+}
+
+- (void)_setupEngine {
+    if (!_active) return;
 
     _engine = [[AVAudioEngine alloc] init];
+
+    // Access inputNode first — AVAudioEngine nodes are lazy; prepare requires at least one.
     AVAudioInputNode* inputNode = _engine.inputNode;
 
-    // Hardware's native format (typically float32 at 44100 or 48000 Hz, stereo).
+    // Now prepare: the engine's graph has inputNode and can initialize correctly.
+    [_engine prepare];
     AVAudioFormat* hwFmt = [inputNode outputFormatForBus:0];
+
+    if (!hwFmt || hwFmt.sampleRate == 0) {
+        NSLog(@"[AiBuddy] Mic: could not get hardware audio format — mic capture disabled");
+        _active = NO;
+        return;
+    }
+    NSLog(@"[AiBuddy] Mic: hardware format = %.0f Hz, %u ch", hwFmt.sampleRate, (unsigned)hwFmt.channelCount);
 
     // Whisper wants float32, 16 kHz, mono.
     AVAudioFormat* targetFmt = [[AVAudioFormat alloc]
@@ -140,16 +156,32 @@ API_AVAILABLE(macos(13.0))
         interleaved:NO];
 
     _converter = [[AVAudioConverter alloc] initFromFormat:hwFmt toFormat:targetFmt];
+    if (!_converter) {
+        NSLog(@"[AiBuddy] Mic: AVAudioConverter init failed — mic capture disabled");
+        _active = NO;
+        return;
+    }
+
+    double ratio = targetFmt.sampleRate / hwFmt.sampleRate;
 
     [inputNode
         installTapOnBus:0
         bufferSize:4096
         format:hwFmt
         block:^(AVAudioPCMBuffer* inBuf, AVAudioTime* __unused when) {
-            if (!self->_active || !self->_cb || !self->_converter) return;
+            if (!self->_active || !self->_cb) return;
 
-            // Calculate output frame capacity with a small margin.
-            double ratio = targetFmt.sampleRate / hwFmt.sampleRate;
+            // Log RMS every ~2 s so we can verify audio is arriving and at what level.
+            static NSTimeInterval nextLog = 0;
+            NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+            if (now >= nextLog && inBuf.floatChannelData && inBuf.frameLength > 0) {
+                nextLog = now + 2.0;
+                const float* s = inBuf.floatChannelData[0];
+                float sum = 0;
+                for (AVAudioFrameCount i = 0; i < inBuf.frameLength; i++) sum += s[i] * s[i];
+                NSLog(@"[AiBuddy] Mic RMS = %.5f (frames=%u)", sqrtf(sum / inBuf.frameLength), inBuf.frameLength);
+            }
+
             AVAudioFrameCount outCap = (AVAudioFrameCount)(inBuf.frameLength * ratio) + 2;
             AVAudioPCMBuffer* outBuf = [[AVAudioPCMBuffer alloc]
                 initWithPCMFormat:targetFmt
@@ -182,18 +214,24 @@ API_AVAILABLE(macos(13.0))
     NSError* startErr = nil;
     [_engine startAndReturnError:&startErr];
     if (startErr) {
+        NSLog(@"[AiBuddy] Mic: AVAudioEngine start failed: %@", startErr.localizedDescription);
         _active = NO;
+    } else {
+        NSLog(@"[AiBuddy] Mic: started successfully");
     }
 }
 
 - (void)stop {
     _active = NO;
-    if (_engine) {
-        [_engine.inputNode removeTapOnBus:0];
-        [_engine stop];
-        _engine = nil;
-        _converter = nil;
-    }
+    // Engine teardown must also happen on the main thread (same as setup).
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_engine) {
+            [self->_engine.inputNode removeTapOnBus:0];
+            [self->_engine stop];
+            self->_engine = nil;
+            self->_converter = nil;
+        }
+    });
 }
 
 @end

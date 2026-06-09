@@ -147,7 +147,7 @@ fn is_silence(samples: &[f32]) -> bool {
         return true;
     }
     let rms = (samples.iter().map(|&s| s * s).sum::<f32>() / samples.len() as f32).sqrt();
-    rms < 0.01
+    rms < 0.0003
 }
 
 fn run_whisper_on_window(ctx: &WhisperContext, samples: &[f32], app: &tauri::AppHandle) {
