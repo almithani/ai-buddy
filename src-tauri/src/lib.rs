@@ -36,6 +36,7 @@ fn complete_onboarding(app: tauri::AppHandle) -> Result<(), String> {
     }
 
     show_droid_window(&app)?;
+    show_chat_impl(&app)?;
 
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -222,6 +223,7 @@ pub fn run() {
             let is_onboarded = data_dir.join("onboarding_complete").exists();
             if is_onboarded {
                 show_droid_window(app.handle())?;
+                show_chat_impl(app.handle())?;
                 let app2 = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     match download::model_path(&app2) {
