@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>AI Buddy transcribes meeting audio entirely on-device to build a speaker-labeled transcript.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>AI Buddy listens to your microphone to capture your side of meetings for transcription.</string>
+</dict>
+</plist>

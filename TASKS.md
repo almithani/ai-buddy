@@ -1,6 +1,6 @@
 # AI Buddy — Session State & Next Steps
 
-Last updated: 2026-05-19 evening
+Last updated: 2026-06-10
 
 ---
 
@@ -15,6 +15,7 @@ Last updated: 2026-05-19 evening
 - **Markdown rendering**: `react-markdown` in buddy bubbles — bold, lists, paragraphs, code blocks all render correctly
 - **Copy-paste**: chat bubbles have `user-select: text` so copying works
 - **Chat UI**: drag to move, close button, streaming cursor, typing indicator, file drop
+- **Transcript panel**: real-time speech-to-text via Apple's on-device SFSpeechRecognizer (no model download, automatic punctuation). Two parallel recognizers: microphone (AVAudioEngine) labeled "Me", system audio (ScreenCaptureKit — meeting participants) labeled "Them". Live partial results shown italic, finalized into speaker-labeled, timestamped turns. Copy / →Chat output `Me: … / Them: …` format. Engine choice is Mac-only by design (decided 2026-06-10; a Windows/Linux port would need a different speech backend AND a new audio capture layer anyway)
 
 ---
 
@@ -81,6 +82,11 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibil
 
 - **Model size label**: UI says ~2.7 GB but the unsloth model is actually ~5 GB. `TOTAL_GB` in `src/onboarding/ModelDownload.tsx` is set to `5.0` now.
 - **`<end_of_turn>` still possible via ReactMarkdown**: If the rolling buffer misses something and `<end_of_turn>` ends up in the buffer, it renders as plain text in the UI. Could add a final `.replace(/<end_of_turn>|<start_of_turn>/g, '')` in `agent.ts` line 167 as a safety net.
+- **⚠️ Never add a second ggml-based crate**: whisper-rs (since removed) and llama-cpp-2 each statically link their own bundled ggml with identical C symbol names. The linker keeps one copy, llama.cpp ran against whisper's older ggml, and the Gemma model failed to load ("tensor 'per_layer_model_proj.weight' is duplicated") with Metal lost. Fixed 2026-06-10 by removing whisper-rs. Any future ggml-linking crate (whisper-rs, other llama bindings, stable-diffusion.cpp bindings, etc.) must run in a separate process.
+- **Transcript: speech permission in dev**: TCC entries for the unbundled dev binary can invalidate across rebuilds (cdhash changes), so re-prompting for Speech Recognition in dev is normal. Stale denial: `tccutil reset SpeechRecognition`.
+- **Transcript: request rotation**: recognition requests are rotated every 50 s mid-monologue (Apple guidance ~1 min/request). If text ever drops at a rotation seam, look at `_rotate` in `capture.m`.
+- **Transcript: energy-gated recognition**: lanes only run a recognition task while there is sound on them (RMS gate 0.008, 2 s hold in `capture.m`). Continuously-running tasks on silent lanes churned `kAFAssistantErrorDomain 1110` errors every ~350 ms and destabilized BOTH lanes' recognition (fixed 2026-06-10). Benign errors (1110/203/216/301) send the lane idle; the gate reopens on sound. Trade-off: ~100–200 ms of audio at utterance onset is lost while the gate opens.
+- **Orphaned whisper model file**: `~/Library/Application Support/com.aibuddy.app/models/ggml-base.en.bin` (145 MB) is no longer used and can be deleted.
 - **Droid drag conflict**: `onMouseDown` in DroidOverlay calls both `startDragging()` and `save_frontmost_app()` — these race. If the user is dragging (not clicking), `save_frontmost_app` fires unnecessarily but harmlessly.
 - **`onboarding_complete` flag**: If this file exists but the model isn't downloaded, the app silently skips download. Delete `~/Library/Application Support/com.aibuddy.app/onboarding_complete` to re-run onboarding.
 
@@ -120,6 +126,10 @@ Model is stored at:
 | `src/onboarding/ModelDownload.tsx` | Download progress UI |
 | `src-tauri/.cargo/config.toml` | macOS 26 SDK C++ header fix (required for llama-cpp-2 to build) |
 | `src-tauri/tauri.conf.json` | Three-window config (onboarding, droid, chat) |
+| `src-tauri/src/transcription.rs` | Thin Rust layer: speech permission commands, start/stop, segment/error event emission |
+| `src-tauri/src/capture.m` | ObjC transcription engine: ScreenCaptureKit (system audio) + AVAudioEngine (mic), each feeding an SFSpeechRecognizer lane with request rotation and error recovery |
+| `src-tauri/Info.plist` | Usage descriptions (speech recognition, microphone) — embedded in dev binary AND merged into bundled .app |
+| `src/components/TranscriptPanel/TranscriptPanel.tsx` | Transcript UI: permission flow, start/stop, speaker-turn display with live partials, send-to-chat |
 
 ---
 

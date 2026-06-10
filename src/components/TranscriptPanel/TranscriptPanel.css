@@ -21,14 +21,52 @@
   cursor: text;
 }
 
-.tp-segment {
-  color: var(--text);
-}
-
 .tp-empty {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* ── Speaker turns ── */
+.tp-turn {
+  margin-bottom: 12px;
+}
+
+.tp-turn-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.tp-speaker {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tp-speaker-me {
+  color: var(--accent);
+}
+
+.tp-speaker-them {
+  color: #b48ee0;
+}
+
+.tp-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tp-turn-text {
+  margin: 0;
+  color: var(--text);
+}
+
+.tp-partial {
+  opacity: 0.55;
+}
+.tp-partial .tp-turn-text {
+  font-style: italic;
 }
 
 /* ── Controls bar ── */
@@ -50,12 +88,6 @@
   transition: background 0.15s, transform 0.1s;
 }
 .tp-btn:active { transform: scale(0.95); }
-
-.tp-btn-primary {
-  background: var(--accent);
-  color: #000;
-}
-.tp-btn-primary:hover { background: #33C4FF; }
 
 .tp-btn-start {
   background: var(--accent);
@@ -88,90 +120,22 @@
   flex-shrink: 0;
 }
 
-/* ── Inline error ── */
-.tp-error-inline {
-  padding: 4px 14px;
-  font-size: 12px;
-  color: var(--error);
-  flex-shrink: 0;
-}
-
-/* ── Download / full-pane states ── */
-.tp-download,
-.tp-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 20px;
-  gap: 10px;
-  text-align: center;
-}
-
-.tp-download-icon {
-  font-size: 36px;
-  line-height: 1;
-}
-
-.tp-download-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.tp-download-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
+/* ── Errors / permission notice ── */
 .tp-error {
   font-size: 12px;
   color: var(--error);
 }
 
-/* ── Progress bar ── */
-.tp-progress-wrap {
+.tp-error-inline {
+  padding: 4px 14px;
+  flex-shrink: 0;
+}
+
+.tp-permission {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 220px;
-}
-
-.tp-progress-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--bg-input);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.tp-progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-  transition: width 0.2s;
-}
-
-.tp-progress-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  min-width: 32px;
-  text-align: right;
-}
-
-/* ── Spinner ── */
-.tp-spinner {
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: tp-spin 0.7s linear infinite;
-}
-
-@keyframes tp-spin {
-  to { transform: rotate(360deg); }
+  gap: 8px;
+  padding: 8px 14px;
+  flex-shrink: 0;
 }

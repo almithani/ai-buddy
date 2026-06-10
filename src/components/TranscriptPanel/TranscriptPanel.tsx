@@ -3,200 +3,207 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./TranscriptPanel.css";
 
-type ModelStatus = "checking" | "missing" | "downloading" | "loading" | "ready";
+type Source = "me" | "them";
+
+interface FinalSegment {
+  id: number;
+  source: Source;
+  text: string;
+  ts: number;
+}
+
+type Partials = Partial<Record<Source, { text: string; ts: number }>>;
+
+interface Turn {
+  source: Source;
+  ts: number;
+  texts: string[];
+}
 
 interface TranscriptPanelProps {
   onSendToChat: (text: string) => void;
 }
 
+function toTurns(finals: FinalSegment[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const seg of finals) {
+    const last = turns[turns.length - 1];
+    if (last && last.source === seg.source) {
+      last.texts.push(seg.text);
+    } else {
+      turns.push({ source: seg.source, ts: seg.ts, texts: [seg.text] });
+    }
+  }
+  return turns;
+}
+
+function speakerLabel(source: Source): string {
+  return source === "me" ? "Me" : "Them";
+}
+
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function transcriptText(finals: FinalSegment[]): string {
+  return toTurns(finals)
+    .map((t) => `${speakerLabel(t.source)}: ${t.texts.join(" ")}`)
+    .join("\n");
+}
+
 export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) {
-  const [modelStatus, setModelStatus] = useState<ModelStatus>("checking");
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadError, setDownloadError] = useState("");
-  const [segments, setSegments] = useState<string[]>([]);
+  const [finals, setFinals] = useState<FinalSegment[]>([]);
+  const [partials, setPartials] = useState<Partials>({});
   const [transcribing, setTranscribing] = useState(false);
-  const [startError, setStartError] = useState("");
+  const [error, setError] = useState("");
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const nextId = useRef(1);
+  const partialsRef = useRef<Partials>({});
+  partialsRef.current = partials;
 
   // Auto-scroll to latest transcript
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [segments]);
+  }, [finals, partials]);
 
-  // On mount: check model state and wire up event listeners
   useEffect(() => {
-    checkModelStatus();
+    invoke<boolean>("is_transcribing")
+      .then(setTranscribing)
+      .catch(() => null);
 
-    const unlistenDownload = listen<{ progress: number; done: boolean; error?: string }>(
-      "whisper-download-progress",
-      async (event) => {
-        const { progress, done, error } = event.payload;
-        if (error) {
-          setDownloadError(error);
-          setModelStatus("missing");
-        } else if (done) {
-          setModelStatus("loading");
-          setDownloadError("");
-          await loadWhisperModel();
-        } else {
-          setDownloadProgress(progress);
-        }
-      }
-    );
-
-    const unlistenSegment = listen<{ text: string; done: boolean }>(
+    const unlistenSegment = listen<{ source: Source; text: string; isFinal: boolean }>(
       "transcription-segment",
       (event) => {
-        if (event.payload.done) {
-          setTranscribing(false);
-        } else if (event.payload.text) {
-          setSegments((s) => [...s, event.payload.text]);
+        const { source, text, isFinal } = event.payload;
+        if (isFinal) {
+          const ts = partialsRef.current[source]?.ts ?? Date.now();
+          setPartials((p) => {
+            const next = { ...p };
+            delete next[source];
+            return next;
+          });
+          if (text.trim()) {
+            setFinals((f) => [...f, { id: nextId.current++, source, text, ts }]);
+          }
+        } else {
+          setPartials((p) => ({
+            ...p,
+            [source]: { text, ts: p[source]?.ts ?? Date.now() },
+          }));
         }
       }
     );
 
+    const unlistenError = listen<string>("transcription-error", (event) => {
+      setError(event.payload);
+      setTranscribing(false);
+    });
+
     return () => {
-      unlistenDownload.then((fn) => fn());
       unlistenSegment.then((fn) => fn());
+      unlistenError.then((fn) => fn());
     };
   }, []);
 
-  async function checkModelStatus() {
-    setModelStatus("checking");
-    try {
-      const exists = await invoke<boolean>("check_whisper_exists");
-      if (!exists) {
-        setModelStatus("missing");
-        return;
-      }
-      const loaded = await invoke<boolean>("is_whisper_loaded");
-      if (loaded) {
-        setModelStatus("ready");
-        const isCapturing = await invoke<boolean>("is_transcribing");
-        setTranscribing(isCapturing);
-      } else {
-        setModelStatus("loading");
-        await loadWhisperModel();
-      }
-    } catch {
-      setModelStatus("missing");
-    }
-  }
-
-  async function loadWhisperModel() {
-    try {
-      await invoke("load_whisper");
-      setModelStatus("ready");
-    } catch {
-      setModelStatus("missing");
-    }
-  }
-
-  async function handleDownload() {
-    setModelStatus("downloading");
-    setDownloadProgress(0);
-    setDownloadError("");
-    try {
-      await invoke("start_whisper_download");
-    } catch (e) {
-      setDownloadError(String(e));
-      setModelStatus("missing");
-    }
-  }
-
   async function handleStartStop() {
     if (transcribing) {
-      await invoke("stop_transcription");
+      await invoke("stop_transcription").catch(() => null);
       setTranscribing(false);
-    } else {
-      setStartError("");
-      setSegments([]);
-      try {
-        await invoke("start_transcription");
-        setTranscribing(true);
-      } catch (e) {
-        setStartError(String(e));
+      setPartials({});
+      return;
+    }
+
+    setError("");
+    setPermissionDenied(false);
+    setFinals([]);
+    setPartials({});
+
+    try {
+      let status = await invoke<string>("transcription_auth_status");
+      if (status === "notDetermined") {
+        status = await invoke<string>("request_transcription_permission");
       }
+      if (status !== "authorized") {
+        setPermissionDenied(true);
+        return;
+      }
+      await invoke("start_transcription");
+      setTranscribing(true);
+    } catch (e) {
+      setError(String(e));
     }
   }
 
   function handleCopy() {
-    navigator.clipboard.writeText(segments.join(" ")).catch(() => null);
+    navigator.clipboard.writeText(transcriptText(finals)).catch(() => null);
   }
 
   function handleSendToChat() {
-    const text = segments.join(" ").trim();
+    const text = transcriptText(finals);
     if (text) onSendToChat(text);
   }
 
-  const fullText = segments.join(" ").trim();
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-
-  if (modelStatus === "checking") {
-    return (
-      <div className="tp-state">
-        <div className="tp-spinner" />
-        <span>Checking model…</span>
-      </div>
-    );
+  function handleOpenSettings() {
+    invoke("open_speech_settings").catch(() => null);
   }
 
-  if (modelStatus === "loading") {
-    return (
-      <div className="tp-state">
-        <div className="tp-spinner" />
-        <span>Loading Whisper model…</span>
-      </div>
-    );
-  }
+  const turns = toTurns(finals);
+  const livePartials = (["me", "them"] as Source[])
+    .filter((s) => partials[s]?.text)
+    .map((s) => ({ source: s, ...partials[s]! }));
+  const hasContent = turns.length > 0 || livePartials.length > 0;
 
-  if (modelStatus === "missing" || modelStatus === "downloading") {
-    return (
-      <div className="tp-download">
-        <div className="tp-download-icon">🎙</div>
-        <p className="tp-download-title">Whisper transcription model</p>
-        <p className="tp-download-desc">
-          ~145 MB · downloaded once · runs entirely on-device
-        </p>
-        {modelStatus === "downloading" ? (
-          <div className="tp-progress-wrap">
-            <div className="tp-progress-bar">
-              <div className="tp-progress-fill" style={{ width: `${downloadProgress}%` }} />
-            </div>
-            <span className="tp-progress-label">{Math.round(downloadProgress)}%</span>
-          </div>
-        ) : (
-          <button className="tp-btn tp-btn-primary" onClick={handleDownload}>
-            Download model
-          </button>
-        )}
-        {downloadError && <p className="tp-error">{downloadError}</p>}
-      </div>
-    );
-  }
-
-  // modelStatus === "ready"
   return (
     <div className="tp-root">
       <div className="tp-transcript" aria-live="polite">
-        {segments.length === 0 ? (
+        {!hasContent ? (
           <p className="tp-empty">
             {transcribing
-              ? "Listening… segments will appear every ~5 s."
+              ? "Listening… your words appear as “Me”, other participants as “Them”."
               : "Press Start to begin capturing meeting audio."}
           </p>
         ) : (
-          segments.map((seg, i) => (
-            <span key={i} className="tp-segment">
-              {seg}{" "}
-            </span>
-          ))
+          <>
+            {turns.map((turn, i) => (
+              <div key={i} className="tp-turn">
+                <div className="tp-turn-head">
+                  <span className={`tp-speaker tp-speaker-${turn.source}`}>
+                    {speakerLabel(turn.source)}
+                  </span>
+                  <span className="tp-time">{formatTime(turn.ts)}</span>
+                </div>
+                <p className="tp-turn-text">{turn.texts.join(" ")}</p>
+              </div>
+            ))}
+            {livePartials.map((p) => (
+              <div key={`partial-${p.source}`} className="tp-turn tp-partial">
+                <div className="tp-turn-head">
+                  <span className={`tp-speaker tp-speaker-${p.source}`}>
+                    {speakerLabel(p.source)}
+                  </span>
+                  <span className="tp-time">{formatTime(p.ts)}</span>
+                </div>
+                <p className="tp-turn-text">{p.text}</p>
+              </div>
+            ))}
+          </>
         )}
         <div ref={bottomRef} />
       </div>
 
-      {startError && <p className="tp-error tp-error-inline">{startError}</p>}
+      {error && <p className="tp-error tp-error-inline">{error}</p>}
+
+      {permissionDenied && (
+        <div className="tp-permission">
+          <p className="tp-error">
+            Speech Recognition permission is required for transcription.
+          </p>
+          <button className="tp-btn tp-btn-ghost" onClick={handleOpenSettings}>
+            Open System Settings
+          </button>
+        </div>
+      )}
 
       <div className="tp-controls">
         <button
@@ -205,7 +212,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
         >
           {transcribing ? "⏹ Stop" : "⏺ Start"}
         </button>
-        {fullText && !transcribing && (
+        {turns.length > 0 && !transcribing && (
           <>
             <button className="tp-btn tp-btn-ghost" onClick={handleCopy} title="Copy transcript">
               Copy
@@ -219,7 +226,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
 
       {transcribing && (
         <p className="tp-hint">
-          Capturing system audio · grant Screen Recording if prompted
+          Transcribing on-device · grant Screen Recording if prompted
         </p>
       )}
     </div>
