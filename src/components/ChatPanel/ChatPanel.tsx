@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import Droid from "../Droid/Droid";
 import { DroidState } from "../Droid/Droid";
 import DetailPanel from "../DetailPanel/DetailPanel";
@@ -474,6 +474,11 @@ export default function ChatPanel() {
             <div className={`chat-msg-bubble ${msg.streaming ? "chat-msg-streaming" : ""}`}>
               {msg.role === "buddy" ? (
                 <ReactMarkdown
+                  // The default transform strips unknown protocols — let our
+                  // reveal-in-Finder scheme through.
+                  urlTransform={(url) =>
+                    url.startsWith("aibuddy-reveal://") ? url : defaultUrlTransform(url)
+                  }
                   components={{
                     a: ({ href, children }) => (
                       <a

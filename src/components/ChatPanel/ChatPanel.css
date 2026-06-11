@@ -126,6 +126,12 @@
 /* Markdown elements inside buddy bubbles */
 .chat-msg-buddy .chat-msg-bubble p { margin: 0 0 8px; }
 .chat-msg-buddy .chat-msg-bubble p:last-child { margin-bottom: 0; }
+.chat-msg-buddy .chat-msg-bubble a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.chat-msg-buddy .chat-msg-bubble a:hover { opacity: 0.8; }
 .chat-msg-buddy .chat-msg-bubble ul,
 .chat-msg-buddy .chat-msg-bubble ol { margin: 4px 0 8px 16px; padding: 0; }
 .chat-msg-buddy .chat-msg-bubble li { margin-bottom: 2px; }

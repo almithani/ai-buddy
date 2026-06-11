@@ -41,6 +41,34 @@ pub fn get_setting(key: String, state: tauri::State<'_, DbState>) -> Result<Opti
     Ok(get_setting_value(&conn, &key))
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Setting {
+    pub key: String,
+    pub value: String,
+}
+
+#[tauri::command]
+pub fn get_all_settings(state: tauri::State<'_, DbState>) -> Result<Vec<Setting>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM settings ORDER BY key")
+        .map_err(|e| e.to_string())?;
+    let settings = stmt
+        .query_map([], |row| Ok(Setting { key: row.get(0)?, value: row.get(1)? }))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn delete_setting(key: String, state: tauri::State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM settings WHERE key = ?1", params![key])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_setting(
     key: String,

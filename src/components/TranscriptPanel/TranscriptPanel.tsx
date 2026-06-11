@@ -51,6 +51,13 @@ function transcriptText(finals: FinalSegment[]): string {
     .join("\n");
 }
 
+/// Same speaker-turn format as the auto-saved .md file.
+function transcriptMarkdown(finals: FinalSegment[]): string {
+  return toTurns(finals)
+    .map((t) => `**${speakerLabel(t.source)}** (${formatTime(t.ts)}): ${t.texts.join(" ")}`)
+    .join("\n\n");
+}
+
 export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) {
   const [finals, setFinals] = useState<FinalSegment[]>([]);
   const [partials, setPartials] = useState<Partials>({});
@@ -154,7 +161,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
   }
 
   function handleCopy() {
-    navigator.clipboard.writeText(transcriptText(finals)).catch(() => null);
+    navigator.clipboard.writeText(transcriptMarkdown(finals)).catch(() => null);
   }
 
   function handleSendToChat() {

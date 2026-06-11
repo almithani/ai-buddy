@@ -306,6 +306,8 @@ pub fn run() {
             memory::delete_preference,
             memory::get_setting,
             memory::set_setting,
+            memory::get_all_settings,
+            memory::delete_setting,
             // Accessibility
             accessibility::check_accessibility_permission,
             accessibility::replace_selected_text,
