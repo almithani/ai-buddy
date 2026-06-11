@@ -33,6 +33,7 @@ Available tools:
 - read_file                  — Read a file the user dropped. Args: {"path": "..."}
 - store_preference           — Save a user preference for future tasks. Args: {"rule": "..."}
 - get_all_preferences        — List all stored user preferences
+- set_transcript_settings    — Change where meeting transcripts are auto-saved or their filename format. Args (each optional): {"directory": "~/Desktop", "include_time": "true" or "false"}. Use when the user asks to change where transcripts/meeting minutes are stored, or to include/omit the time in transcript filenames.
 
 Rules:
 - The user's selected text is shown in the conversation above — use it as the input for edits.
@@ -80,6 +81,20 @@ async function executeTool(
       const prefs = await invoke<Array<{ rule: string }>>("get_all_preferences");
       if (prefs.length === 0) return "No preferences saved yet.";
       return prefs.map((p) => `- ${p.rule}`).join("\n");
+    }
+    case "set_transcript_settings": {
+      const updates: string[] = [];
+      if (call.args.directory) {
+        await invoke("set_setting", { key: "transcript_dir", value: call.args.directory });
+        updates.push(`save folder → ${call.args.directory}`);
+      }
+      if (call.args.include_time !== undefined) {
+        const v = String(call.args.include_time) === "false" ? "false" : "true";
+        await invoke("set_setting", { key: "transcript_include_time", value: v });
+        updates.push(v === "true" ? "filenames include the time" : "filenames omit the time");
+      }
+      if (updates.length === 0) return "No settings provided — nothing changed.";
+      return `Updated transcript settings: ${updates.join("; ")}`;
     }
     case "read_file": {
       const path = call.args.path ?? "";

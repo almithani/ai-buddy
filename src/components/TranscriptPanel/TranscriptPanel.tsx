@@ -72,6 +72,24 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       .then(setTranscribing)
       .catch(() => null);
 
+    // Restore the transcript from the backend — panel state is destroyed on
+    // tab switches, but the backend keeps the current/last session's segments.
+    invoke<{ source: Source; text: string; tsMs: number }[]>("get_transcript")
+      .then((stored) => {
+        if (stored.length === 0) return;
+        setFinals((existing) =>
+          existing.length >= stored.length
+            ? existing
+            : stored.map((s) => ({
+                id: nextId.current++,
+                source: s.source,
+                text: s.text,
+                ts: s.tsMs,
+              }))
+        );
+      })
+      .catch(() => null);
+
     const unlistenSegment = listen<{ source: Source; text: string; isFinal: boolean }>(
       "transcription-segment",
       (event) => {
@@ -161,7 +179,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
           <p className="tp-empty">
             {transcribing
               ? "Listening… your words appear as “Me”, other participants as “Them”."
-              : "Press Start to begin capturing meeting audio."}
+              : "Press Start to begin capturing audio privately. Works on every meeting platform — or even by yourself!"}
           </p>
         ) : (
           <>

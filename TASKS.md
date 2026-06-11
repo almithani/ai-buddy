@@ -1,6 +1,6 @@
 # AI Buddy — Session State & Next Steps
 
-Last updated: 2026-06-10
+Last updated: 2026-06-11
 
 ---
 
@@ -16,6 +16,9 @@ Last updated: 2026-06-10
 - **Copy-paste**: chat bubbles have `user-select: text` so copying works
 - **Chat UI**: drag to move, close button, streaming cursor, typing indicator, file drop
 - **Transcript panel**: real-time speech-to-text via Apple's on-device SFSpeechRecognizer (no model download, automatic punctuation). Two parallel recognizers: microphone (AVAudioEngine) labeled "Me", system audio (ScreenCaptureKit — meeting participants) labeled "Them". Live partial results shown italic, finalized into speaker-labeled, timestamped turns. Copy / →Chat output `Me: … / Them: …` format. Engine choice is Mac-only by design (decided 2026-06-10; a Windows/Linux port would need a different speech backend AND a new audio capture layer anyway)
+- **Transcript persistence**: Rust `TranscriptStore` (managed state) is the source of truth — final segments accumulate there; `get_transcript` command restores the panel on remount (tab switches previously destroyed the transcript). Cleared on Start (safe: previous transcript auto-saved on Stop)
+- **Transcript auto-save**: on Stop, a background thread waits ~2.5 s for trailing finals, generates a 3–5 word subject via local Gemma (`llm::generate_short_text`, non-streaming; falls back to first words if model busy/unloaded), and writes a speaker-labeled markdown file. Default `~/Documents/AI Buddy Transcripts/YYYY-MM-DD HHMM - Subject.md` (no colons — illegal on macOS); collisions get " (2)". Settings in SQLite `settings` table: `transcript_dir`, `transcript_include_time` — changeable from chat via the agent's `set_transcript_settings` tool ("save minutes to my Desktop and omit the time")
+- **Transcription events in chat**: Rust emits `transcription-started` / `transcription-stopped` / `transcript-saved` (path payload); ChatPanel injects buddy messages without an LLM call. The saved-file message links via `aibuddy-reveal://<encoded path>` — a custom ReactMarkdown `a` component intercepts clicks and calls `reveal_in_finder` (`open -R`)
 
 ---
 
@@ -85,6 +88,7 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibil
 - **⚠️ Never add a second ggml-based crate**: whisper-rs (since removed) and llama-cpp-2 each statically link their own bundled ggml with identical C symbol names. The linker keeps one copy, llama.cpp ran against whisper's older ggml, and the Gemma model failed to load ("tensor 'per_layer_model_proj.weight' is duplicated") with Metal lost. Fixed 2026-06-10 by removing whisper-rs. Any future ggml-linking crate (whisper-rs, other llama bindings, stable-diffusion.cpp bindings, etc.) must run in a separate process.
 - **Transcript: speech permission in dev**: TCC entries for the unbundled dev binary can invalidate across rebuilds (cdhash changes), so re-prompting for Speech Recognition in dev is normal. Stale denial: `tccutil reset SpeechRecognition`.
 - **Transcript: request rotation**: recognition requests are rotated every 50 s mid-monologue (Apple guidance ~1 min/request). If text ever drops at a rotation seam, look at `_rotate` in `capture.m`.
+- **Transcript: finals only arrive at request end**: with on-device recognition, `isFinal` results effectively only fire when a request ends (gate close, 50 s rotation, or Stop). A continuous talker's entire session can be one final that arrives ~1 s AFTER Stop — lanes must outlive stop() to receive it (the result handler holds the lane weakly; `stop` in `capture.m` captures self in its delayed cancel block for this reason, fixed 2026-06-11). The save task waits 3.5 s after stop for the same reason.
 - **Transcript: energy-gated recognition**: lanes only run a recognition task while there is sound on them (RMS gate 0.008, 2 s hold in `capture.m`). Continuously-running tasks on silent lanes churned `kAFAssistantErrorDomain 1110` errors every ~350 ms and destabilized BOTH lanes' recognition (fixed 2026-06-10). Benign errors (1110/203/216/301) send the lane idle; the gate reopens on sound. Trade-off: ~100–200 ms of audio at utterance onset is lost while the gate opens.
 - **Orphaned whisper model file**: `~/Library/Application Support/com.aibuddy.app/models/ggml-base.en.bin` (145 MB) is no longer used and can be deleted.
 - **Droid drag conflict**: `onMouseDown` in DroidOverlay calls both `startDragging()` and `save_frontmost_app()` — these race. If the user is dragging (not clicking), `save_frontmost_app` fires unnecessarily but harmlessly.
@@ -118,7 +122,7 @@ Model is stored at:
 | `src-tauri/src/llm.rs` | LLM inference, streaming, stop-sequence rolling buffer |
 | `src-tauri/src/accessibility.rs` | macOS AX layer — get/set selected/focused text, `PrevApp` state |
 | `src-tauri/src/download.rs` | Model download, `model_path()` checks resource dir then app data dir |
-| `src-tauri/src/memory.rs` | SQLite preferences |
+| `src-tauri/src/memory.rs` | SQLite preferences + key-value `settings` table (transcript save config) |
 | `src-tauri/src/lib.rs` | Tauri setup, window management, command registration |
 | `src/lib/agent.ts` | TypeScript tool-calling agent loop |
 | `src/components/ChatPanel/ChatPanel.tsx` | Chat UI, streams tokens, calls `runAgent` |

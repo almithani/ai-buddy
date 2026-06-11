@@ -308,12 +308,14 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
     _active = NO;
     dispatch_async(_q, ^{
         [self _cancelTimers];
-        [self.request endAudio];
+        SFSpeechAudioBufferRecognitionRequest* req = self.request;
         self.request = nil;
-        // Give the in-flight task a moment to flush its last final, then cancel.
-        SFSpeechRecognitionTask* task = self->_task;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                       self->_q, ^{ [task cancel]; });
+        [req endAudio];
+        // The result handler only holds a WEAK reference to the lane; capture
+        // self strongly here so the lane survives until the in-flight task
+        // flushes its final result (~0.5–1 s after endAudio), then cancel.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+                       self->_q, ^{ [self->_task cancel]; });
     });
 }
 

@@ -17,8 +17,44 @@ pub fn init_db(conn: &Connection) -> rusqlite::Result<()> {
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             rule       TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         );",
     )
+}
+
+/// Internal helper for Rust-side reads (e.g. transcript save settings).
+pub fn get_setting_value(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
+#[tauri::command]
+pub fn get_setting(key: String, state: tauri::State<'_, DbState>) -> Result<Option<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(get_setting_value(&conn, &key))
+}
+
+#[tauri::command]
+pub fn set_setting(
+    key: String,
+    value: String,
+    state: tauri::State<'_, DbState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

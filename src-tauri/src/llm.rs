@@ -81,6 +81,84 @@ pub fn is_model_loaded(state: tauri::State<'_, LlmState>) -> bool {
     state.0.lock().map(|g| g.is_some()).unwrap_or(false)
 }
 
+/// Short, synchronous, non-streaming completion for internal use (e.g.
+/// transcript subject lines). Holds the model lock for the duration — callers
+/// should keep `max_new` small. Does NOT emit llm-token events.
+pub fn generate_short_text(
+    state: &LlmState,
+    prompt_text: &str,
+    max_new: u32,
+) -> Result<String, String> {
+    let backend = BACKEND.get().ok_or("LLM backend not initialised")?;
+
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    let model = guard.as_ref().ok_or("Model not loaded")?;
+
+    let messages = [ChatMessage { role: "user".into(), content: prompt_text.into() }];
+    let prompt = format_prompt("", &messages);
+
+    let tokens: Vec<_> = model
+        .str_to_token(&prompt, AddBos::Always)
+        .map_err(|e| format!("Tokenisation failed: {e}"))?;
+
+    let ctx_params = LlamaContextParams::default()
+        .with_n_ctx(Some(NonZeroU32::new(2048).unwrap()))
+        .with_n_threads(
+            std::thread::available_parallelism()
+                .map(|n| n.get() as i32)
+                .unwrap_or(4),
+        );
+    if tokens.len() + max_new as usize > 2048 {
+        return Err("Prompt too long for subject generation".into());
+    }
+
+    let mut ctx = model
+        .new_context(backend, ctx_params)
+        .map_err(|e| format!("Context creation failed: {e}"))?;
+
+    let mut batch = LlamaBatch::new(tokens.len(), 1);
+    let last_idx = (tokens.len() as i32) - 1;
+    for (i, &tok) in tokens.iter().enumerate() {
+        batch.add(tok, i as i32, &[0], i as i32 == last_idx)
+            .map_err(|e| format!("Batch add failed: {e}"))?;
+    }
+    ctx.decode(&mut batch).map_err(|e| format!("Initial decode failed: {e}"))?;
+
+    let mut sampler = LlamaSampler::chain_simple([
+        LlamaSampler::temp(0.3),
+        LlamaSampler::dist(42),
+    ]);
+
+    let mut out = String::new();
+    let mut n_pos = tokens.len() as i32;
+    for _ in 0..max_new {
+        let new_token = sampler.sample(&ctx, -1);
+        sampler.accept(new_token);
+        if model.is_eog_token(new_token) {
+            break;
+        }
+        #[allow(deprecated)]
+        let piece = model.token_to_str(new_token, Special::Tokenize).unwrap_or_default();
+        out.push_str(&piece);
+        if out.contains("<end_of_turn>") || out.contains("<start_of_turn>") || out.contains('\n') {
+            break;
+        }
+        batch.clear();
+        batch.add(new_token, n_pos, &[0], true)
+            .map_err(|e| format!("Token batch add failed: {e}"))?;
+        ctx.decode(&mut batch).map_err(|e| format!("Token decode failed: {e}"))?;
+        n_pos += 1;
+    }
+
+    let out = out
+        .split("<end_of_turn>").next().unwrap_or("")
+        .split("<start_of_turn>").next().unwrap_or("")
+        .lines().next().unwrap_or("")
+        .trim()
+        .to_string();
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn generate_response(
     app: tauri::AppHandle,

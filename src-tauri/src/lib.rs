@@ -8,7 +8,7 @@ mod transcription;
 
 use memory::DbState;
 use llm::LlmState;
-use transcription::TranscriptionActive;
+use transcription::{TranscriptionActive, TranscriptStore};
 use accessibility::PrevApp;
 
 #[derive(Clone, serde::Serialize)]
@@ -102,6 +102,14 @@ fn request_accessibility_permission() {
 }
 
 #[tauri::command]
+fn reveal_in_finder(path: String) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    }
+}
+
+#[tauri::command]
 fn open_speech_settings() {
     #[cfg(target_os = "macos")]
     {
@@ -173,7 +181,12 @@ pub fn run() {
             app.manage(LlmState(std::sync::Mutex::new(None)));
 
             // --- Transcription state ---
+            eprintln!("[AiBuddy] backend up — transcript auto-save pipeline active");
             app.manage(TranscriptionActive(std::sync::atomic::AtomicBool::new(false)));
+            app.manage(TranscriptStore {
+                segments: std::sync::Mutex::new(Vec::new()),
+                session_start: std::sync::Mutex::new(None),
+            });
 
             // --- Accessibility: previous frontmost app PID ---
             app.manage(PrevApp(std::sync::Mutex::new(None)));
@@ -285,10 +298,14 @@ pub fn run() {
             transcription::is_transcribing,
             transcription::start_transcription,
             transcription::stop_transcription,
+            transcription::get_transcript,
+            reveal_in_finder,
             // Memory
             memory::store_preference,
             memory::get_all_preferences,
             memory::delete_preference,
+            memory::get_setting,
+            memory::set_setting,
             // Accessibility
             accessibility::check_accessibility_permission,
             accessibility::replace_selected_text,

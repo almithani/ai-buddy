@@ -167,6 +167,38 @@ export default function ChatPanel() {
     return () => { unlisten2.then((fn) => fn()); };
   }, []);
 
+  // Transcription lifecycle → buddy messages (no LLM call). ChatPanel never
+  // unmounts while the window lives, so these listeners persist across tabs.
+  useEffect(() => {
+    function injectBuddyMessage(text: string) {
+      setMessages((m) => [...m, { id: nextId++, role: "buddy", text }]);
+    }
+
+    const unlistenStarted = listen("transcription-started", () => {
+      injectBuddyMessage("I've started transcription for you. 🎙");
+    });
+    const unlistenStopped = listen("transcription-stopped", () => {
+      injectBuddyMessage("I've stopped recording.");
+    });
+    const unlistenSaved = listen<string>("transcript-saved", (event) => {
+      const path = event.payload;
+      const filename = path.split("/").pop() ?? path;
+      injectBuddyMessage(
+        `I've stored your transcript at [${filename}](aibuddy-reveal://${encodeURIComponent(path)})`
+      );
+    });
+    const unlistenError = listen<string>("transcription-error", (event) => {
+      injectBuddyMessage(`Something went wrong with transcription: ${event.payload}`);
+    });
+
+    return () => {
+      unlistenStarted.then((fn) => fn());
+      unlistenStopped.then((fn) => fn());
+      unlistenSaved.then((fn) => fn());
+      unlistenError.then((fn) => fn());
+    };
+  }, []);
+
   useEffect(() => {
     // "hotkey-triggered" is a bare signal — no payload. We pull the text via
     // get_pending_text() so there is no race with the window becoming visible.
@@ -441,7 +473,28 @@ export default function ChatPanel() {
           <div key={msg.id} className={`chat-msg chat-msg-${msg.role}`}>
             <div className={`chat-msg-bubble ${msg.streaming ? "chat-msg-streaming" : ""}`}>
               {msg.role === "buddy" ? (
-                <ReactMarkdown>{msg.text}</ReactMarkdown>
+                <ReactMarkdown
+                  components={{
+                    a: ({ href, children }) => (
+                      <a
+                        href={href}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (href?.startsWith("aibuddy-reveal://")) {
+                            const path = decodeURIComponent(
+                              href.slice("aibuddy-reveal://".length)
+                            );
+                            invoke("reveal_in_finder", { path }).catch(() => null);
+                          }
+                        }}
+                      >
+                        {children}
+                      </a>
+                    ),
+                  }}
+                >
+                  {msg.text}
+                </ReactMarkdown>
               ) : (
                 msg.text
               )}
