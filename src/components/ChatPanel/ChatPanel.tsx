@@ -187,6 +187,11 @@ export default function ChatPanel() {
         `I've stored your transcript at [${filename}](aibuddy-reveal://${encodeURIComponent(path)})`
       );
     });
+    const unlistenSaveFailed = listen<string>("transcript-save-failed", (event) => {
+      injectBuddyMessage(
+        `I couldn't save your transcript: ${event.payload}\n\nYour transcript is still in the Transcript tab — you can copy it from there.`
+      );
+    });
     const unlistenError = listen<string>("transcription-error", (event) => {
       injectBuddyMessage(`Something went wrong with transcription: ${event.payload}`);
     });
@@ -195,6 +200,7 @@ export default function ChatPanel() {
       unlistenStarted.then((fn) => fn());
       unlistenStopped.then((fn) => fn());
       unlistenSaved.then((fn) => fn());
+      unlistenSaveFailed.then((fn) => fn());
       unlistenError.then((fn) => fn());
     };
   }, []);

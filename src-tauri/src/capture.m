@@ -39,6 +39,7 @@ API_AVAILABLE(macos(13.0))
     void*                    _ctx;
     SFSpeechRecognizer*      _recognizer;
     SFSpeechRecognitionTask* _task;
+    SFSpeechRecognitionTask* _suppressFinalFrom; // task whose partial we already flushed
     NSString*                _lastPartial;
     dispatch_queue_t         _q;
     dispatch_source_t        _rotateTimer;
@@ -104,13 +105,25 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
     [self _armGateTimer];
 }
 
+// Must be called on _q. Deliver the accumulated partial as a final NOW —
+// the recognizer's own post-endAudio final is unreliable (can arrive empty
+// or truncated), so we flush deterministically and suppress the real one.
+- (void)_flushPartialAsFinal {
+    if (_lastPartial.length > 0) {
+        [self _deliverText:_lastPartial final:YES];
+        _lastPartial = nil;
+    }
+}
+
 // Must be called on _q.
 - (void)_gateClose {
     if (self.request == nil) return;
     NSLog(@"[AiBuddy] Lane %d: gate closed — ending recognition", _source);
     SFSpeechAudioBufferRecognitionRequest* req = self.request;
     self.request = nil;            // appends stop; idle until next sound
-    [req endAudio];                // task flushes its final through the handler
+    _suppressFinalFrom = _task;
+    [self _flushPartialAsFinal];
+    [req endAudio];
     [self _cancelTimers];
 }
 
@@ -158,11 +171,16 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
             AiBuddySpeechLane* self = weakSelf;
             if (!self) return;
             dispatch_async(self->_q, ^{
-                // Ignore callbacks from a task that has been rotated out.
+                // Finals from a request we already flushed ourselves
+                // (gate close / rotation / stop) would be duplicates — drop them.
+                BOOL suppressed = (thisTask == self->_suppressFinalFrom);
+                if (suppressed && result && result.isFinal) {
+                    self->_suppressFinalFrom = nil;
+                }
+
+                // Callbacks from a task that has been rotated out.
                 if (thisTask != self->_task) {
-                    // Still deliver a final from the rotated-out task — it carries
-                    // the tail of the previous request's audio.
-                    if (result && result.isFinal) {
+                    if (result && result.isFinal && !suppressed) {
                         [self _deliverText:result.bestTranscription.formattedString final:YES];
                     }
                     return;
@@ -170,7 +188,9 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
                 if (result) {
                     NSString* text = result.bestTranscription.formattedString;
                     if (result.isFinal) {
-                        [self _deliverText:text final:YES];
+                        if (!suppressed) {
+                            [self _deliverText:text final:YES];
+                        }
                         self->_lastPartial = nil;
                         self->_consecutiveErrors = 0;
                         if (self.request != nil) {
@@ -178,7 +198,7 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
                             [self _beginTask];
                             [self _armRotateTimer];
                         }
-                    } else {
+                    } else if (!suppressed) {
                         self->_lastPartial = text;
                         [self _deliverText:text final:NO];
                     }
@@ -266,7 +286,8 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
 - (void)_rotate {
     if (!_active || self.request == nil) return;
     SFSpeechAudioBufferRecognitionRequest* oldReq = self.request;
-    _lastPartial = nil;
+    _suppressFinalFrom = _task;
+    [self _flushPartialAsFinal];
     [self _beginTask];          // swaps request and _task; appends now land in the new request
     [oldReq endAudio];
     [self _armRotateTimer];
@@ -310,10 +331,12 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
         [self _cancelTimers];
         SFSpeechAudioBufferRecognitionRequest* req = self.request;
         self.request = nil;
+        self->_suppressFinalFrom = self->_task;
+        [self _flushPartialAsFinal];
         [req endAudio];
         // The result handler only holds a WEAK reference to the lane; capture
-        // self strongly here so the lane survives until the in-flight task
-        // flushes its final result (~0.5–1 s after endAudio), then cancel.
+        // self strongly here so the lane survives long enough to clean up the
+        // in-flight task, then cancel it.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
                        self->_q, ^{ [self->_task cancel]; });
     });

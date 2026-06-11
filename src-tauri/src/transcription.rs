@@ -289,15 +289,7 @@ fn generate_subject(app: &AppHandle, segments: &[StoredSegment]) -> String {
     }
 }
 
-fn transcript_save_dir(app: &AppHandle) -> std::path::PathBuf {
-    let db = app.state::<crate::memory::DbState>();
-    let configured = db
-        .0
-        .lock()
-        .ok()
-        .and_then(|conn| crate::memory::get_setting_value(&conn, "transcript_dir"));
-
-    let raw = configured.unwrap_or_else(|| "~/Documents/AI Buddy Transcripts".to_string());
+fn expand_home(raw: &str) -> std::path::PathBuf {
     if let Some(rest) = raw.strip_prefix("~/") {
         if let Some(home) = std::env::var_os("HOME") {
             return std::path::PathBuf::from(home).join(rest);
@@ -306,6 +298,42 @@ fn transcript_save_dir(app: &AppHandle) -> std::path::PathBuf {
     std::path::PathBuf::from(raw)
 }
 
+const DEFAULT_TRANSCRIPT_DIR: &str = "~/Documents/AI Buddy Transcripts";
+
+/// Configured save dir, or the default when no setting exists (e.g. the user
+/// deleted it in the Memory window).
+fn transcript_save_dir(app: &AppHandle) -> std::path::PathBuf {
+    let db = app.state::<crate::memory::DbState>();
+    let configured = db
+        .0
+        .lock()
+        .ok()
+        .and_then(|conn| crate::memory::get_setting_value(&conn, "transcript_dir"));
+    expand_home(&configured.unwrap_or_else(|| DEFAULT_TRANSCRIPT_DIR.to_string()))
+}
+
+/// Create dir, pick a non-colliding filename, write. Returns the final path.
+fn write_transcript(
+    dir: &std::path::Path,
+    stem: &str,
+    content: &str,
+) -> Result<std::path::PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
+
+    // Avoid clobbering an existing file: " (2)", " (3)", …
+    let mut path = dir.join(format!("{stem}.md"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}).md"));
+        n += 1;
+    }
+
+    std::fs::write(&path, content).map_err(|e| format!("couldn't write {}: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// On failure the transcript store is left untouched — the transcript stays
+/// visible in the UI so the user can copy it manually.
 fn save_transcript(app: &AppHandle) {
     let store = app.state::<TranscriptStore>();
     let segments: Vec<StoredSegment> = match store.segments.lock() {
@@ -343,20 +371,6 @@ fn save_transcript(app: &AppHandle) {
         format!("{} - {}", started.format("%Y-%m-%d"), subject)
     };
 
-    let dir = transcript_save_dir(app);
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("Transcript save failed (create dir {dir:?}): {e}");
-        return;
-    }
-
-    // Avoid clobbering an existing file: " (2)", " (3)", …
-    let mut path = dir.join(format!("{stem}.md"));
-    let mut n = 2;
-    while path.exists() {
-        path = dir.join(format!("{stem} ({n}).md"));
-        n += 1;
-    }
-
     let mut md = format!(
         "# {}\n\n_Transcribed by AI Buddy on {}_\n\n",
         subject,
@@ -369,11 +383,29 @@ fn save_transcript(app: &AppHandle) {
         md.push_str(&format!("**{}** ({}): {}\n\n", label, when.format("%-I:%M %p"), text));
     }
 
-    if let Err(e) = std::fs::write(&path, md) {
-        eprintln!("Transcript save failed (write {path:?}): {e}");
-        return;
-    }
+    let dir = transcript_save_dir(app);
+    eprintln!("[AiBuddy] transcript save: writing to {}", dir.display());
 
-    eprintln!("[AiBuddy] transcript saved: {}", path.display());
-    app.emit("transcript-saved", path.to_string_lossy().to_string()).ok();
+    let result = write_transcript(&dir, &stem, &md).or_else(|first_err| {
+        // Configured dir failed — fall back to the default location.
+        let default_dir = expand_home(DEFAULT_TRANSCRIPT_DIR);
+        if default_dir != dir {
+            eprintln!("[AiBuddy] transcript save: {first_err} — falling back to {}", default_dir.display());
+            write_transcript(&default_dir, &stem, &md)
+                .map_err(|e2| format!("{first_err}; fallback also failed: {e2}"))
+        } else {
+            Err(first_err)
+        }
+    });
+
+    match result {
+        Ok(path) => {
+            eprintln!("[AiBuddy] transcript saved: {}", path.display());
+            app.emit("transcript-saved", path.to_string_lossy().to_string()).ok();
+        }
+        Err(e) => {
+            eprintln!("[AiBuddy] transcript save FAILED: {e}");
+            app.emit("transcript-save-failed", e).ok();
+        }
+    }
 }

@@ -302,12 +302,10 @@ pub fn run() {
             reveal_in_finder,
             // Memory
             memory::store_preference,
-            memory::get_all_preferences,
-            memory::delete_preference,
             memory::get_setting,
             memory::set_setting,
-            memory::get_all_settings,
-            memory::delete_setting,
+            memory::get_memory,
+            memory::delete_memory,
             // Accessibility
             accessibility::check_accessibility_permission,
             accessibility::replace_selected_text,

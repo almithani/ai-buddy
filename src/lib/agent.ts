@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { MemoryItem, describeMemory } from "./memory";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,7 @@ Available tools:
 - replace_selected_text      — Replace the user's selected text. Args: {"text": "..."}
 - read_file                  — Read a file the user dropped. Args: {"path": "..."}
 - store_preference           — Save a user preference for future tasks. Args: {"rule": "..."}
-- get_all_preferences        — List all stored user preferences
+- get_memory                 — List everything you remember about the user (preferences and settings)
 - set_transcript_settings    — Change where meeting transcripts are auto-saved or their filename format. Args (each optional): {"directory": "~/Desktop", "include_time": "true" or "false"}. Use when the user asks to change where transcripts/meeting minutes are stored, or to include/omit the time in transcript filenames.
 
 Rules:
@@ -43,13 +44,20 @@ Rules:
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
 
-function buildSystemPrompt(preferences: string[]): string {
-  const prefBlock =
-    preferences.length > 0
-      ? `\nUser preferences (apply these automatically):\n${preferences.map((p) => `- ${p}`).join("\n")}`
+function buildSystemPrompt(memory: MemoryItem[]): string {
+  const rules = memory.filter((m) => m.kind === "rule");
+  const settings = memory.filter((m) => m.kind === "setting");
+
+  const ruleBlock =
+    rules.length > 0
+      ? `\nUser preferences (apply these automatically):\n${rules.map((m) => `- ${describeMemory(m)}`).join("\n")}`
+      : "";
+  const settingBlock =
+    settings.length > 0
+      ? `\nCurrent settings:\n${settings.map((m) => `- ${describeMemory(m)}`).join("\n")}`
       : "";
 
-  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${prefBlock}`;
+  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${ruleBlock}${settingBlock}`;
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -77,10 +85,11 @@ async function executeTool(
       });
       return `Saved: "${pref.rule}"`;
     }
+    case "get_memory":
     case "get_all_preferences": {
-      const prefs = await invoke<Array<{ rule: string }>>("get_all_preferences");
-      if (prefs.length === 0) return "No preferences saved yet.";
-      return prefs.map((p) => `- ${p.rule}`).join("\n");
+      const items = await invoke<MemoryItem[]>("get_memory");
+      if (items.length === 0) return "Nothing remembered yet.";
+      return items.map((m) => `- ${describeMemory(m)}`).join("\n");
     }
     case "set_transcript_settings": {
       const updates: string[] = [];
@@ -132,10 +141,8 @@ export async function runAgent(
 ): Promise<string> {
   const { onToken, onStatus, onDroidState, onReplace } = callbacks;
 
-  const prefs = await invoke<Array<{ rule: string }>>("get_all_preferences").catch(
-    () => []
-  );
-  const systemPrompt = buildSystemPrompt(prefs.map((p) => p.rule));
+  const memory = await invoke<MemoryItem[]>("get_memory").catch(() => []);
+  const systemPrompt = buildSystemPrompt(memory);
 
   const finalUserMessage = resourceContext
     ? `${resourceContext}\n\n${userMessage}`
