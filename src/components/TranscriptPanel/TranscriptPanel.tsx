@@ -45,6 +45,10 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function basename(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
 function transcriptText(finals: FinalSegment[]): string {
   return toTurns(finals)
     .map((t) => `${speakerLabel(t.source)}: ${t.texts.join(" ")}`)
@@ -64,6 +68,9 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState("");
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [livePath, setLivePath] = useState<string | null>(null);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const partialsRef = useRef<Partials>({});
@@ -125,9 +132,36 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       setTranscribing(false);
     });
 
+    // Status bar: which file we're recording to / last saved to.
+    invoke<{ live: string | null; saved: string | null }>("get_transcript_files")
+      .then((f) => {
+        setLivePath(f.live);
+        setSavedPath(f.saved);
+      })
+      .catch(() => null);
+    const unlistenStarted = listen<string>("transcription-started", (event) => {
+      setLivePath(event.payload || null);
+      setSaveFailed(false);
+    });
+    const unlistenSaved = listen<string>("transcript-saved", (event) => {
+      setSavedPath(event.payload);
+      setLivePath(null);
+    });
+    const unlistenSaveFailed = listen<string>("transcript-save-failed", () => {
+      // The live file still exists on disk — keep linking to it for recovery.
+      setSaveFailed(true);
+    });
+    const unlistenDiscarded = listen("transcript-discarded", () => {
+      setLivePath(null); // empty session: live file was deleted
+    });
+
     return () => {
       unlistenSegment.then((fn) => fn());
       unlistenError.then((fn) => fn());
+      unlistenStarted.then((fn) => fn());
+      unlistenSaved.then((fn) => fn());
+      unlistenSaveFailed.then((fn) => fn());
+      unlistenDiscarded.then((fn) => fn());
     };
   }, []);
 
@@ -227,6 +261,39 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       </div>
 
       {error && <p className="tp-error tp-error-inline">{error}</p>}
+
+      {livePath ? (
+        <div className="tp-statusbar">
+          {transcribing && <span className="tp-status-dot" />}
+          <a
+            className="tp-status-link"
+            title={livePath}
+            onClick={() => invoke("reveal_in_finder", { path: livePath }).catch(() => null)}
+          >
+            {basename(livePath)}
+          </a>
+          <span className="tp-status-state tp-status-right">
+            {transcribing
+              ? livePartials.length > 0
+                ? "unsaved changes"
+                : "saved"
+              : saveFailed
+                ? "save failed — file kept"
+                : "finalizing…"}
+          </span>
+        </div>
+      ) : savedPath ? (
+        <div className="tp-statusbar">
+          <span className="tp-status-state">Saved to</span>
+          <a
+            className="tp-status-link"
+            title={savedPath}
+            onClick={() => invoke("reveal_in_finder", { path: savedPath }).catch(() => null)}
+          >
+            {basename(savedPath)}
+          </a>
+        </div>
+      ) : null}
 
       {permissionDenied && (
         <div className="tp-permission">

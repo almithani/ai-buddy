@@ -17,6 +17,8 @@ pub struct TranscriptStore {
     /// The in-progress meeting-notes file, created at session start and
     /// rewritten on every final segment; renamed to its real name on save.
     pub live_path: Mutex<Option<std::path::PathBuf>>,
+    /// The most recent successfully saved transcript file.
+    pub last_saved: Mutex<Option<std::path::PathBuf>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -279,6 +281,26 @@ pub fn get_transcript(
     Ok(store.segments.lock().map_err(|e| e.to_string())?.clone())
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptFiles {
+    pub live: Option<String>,
+    pub saved: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_transcript_files(store: tauri::State<'_, TranscriptStore>) -> TranscriptFiles {
+    let path_str = |g: &Mutex<Option<std::path::PathBuf>>| {
+        g.lock()
+            .ok()
+            .and_then(|p| p.as_ref().map(|p| p.to_string_lossy().to_string()))
+    };
+    TranscriptFiles {
+        live: path_str(&store.live_path),
+        saved: path_str(&store.last_saved),
+    }
+}
+
 // ── Saving to markdown ────────────────────────────────────────────────────────
 
 /// Fold consecutive same-source segments into speaker turns.
@@ -451,6 +473,7 @@ fn save_transcript(app: &AppHandle) {
         if let Some(p) = live_path {
             std::fs::remove_file(p).ok();
         }
+        app.emit("transcript-discarded", ()).ok();
         return;
     }
     eprintln!("[AiBuddy] transcript save: {} segment(s), generating subject…", segments.len());
@@ -517,6 +540,9 @@ fn save_transcript(app: &AppHandle) {
     match result {
         Ok(path) => {
             eprintln!("[AiBuddy] transcript saved: {}", path.display());
+            if let Ok(mut last) = store.last_saved.lock() {
+                *last = Some(path.clone());
+            }
             app.emit("transcript-saved", path.to_string_lossy().to_string()).ok();
         }
         Err(e) => {

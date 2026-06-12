@@ -188,6 +188,7 @@ pub fn run() {
                 segments: std::sync::Mutex::new(Vec::new()),
                 session_start: std::sync::Mutex::new(None),
                 live_path: std::sync::Mutex::new(None),
+                last_saved: std::sync::Mutex::new(None),
             });
 
             // --- Accessibility: previous frontmost app PID ---
@@ -303,6 +304,7 @@ pub fn run() {
             transcription::start_transcription,
             transcription::stop_transcription,
             transcription::get_transcript,
+            transcription::get_transcript_files,
             reveal_in_finder,
             // Memory
             memory::store_preference,

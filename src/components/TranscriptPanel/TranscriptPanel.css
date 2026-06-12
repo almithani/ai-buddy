@@ -139,3 +139,49 @@
   padding: 8px 14px;
   flex-shrink: 0;
 }
+
+/* ── Status bar ── */
+.tp-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.tp-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--error);
+  flex-shrink: 0;
+  animation: tp-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tp-pulse {
+  50% { opacity: 0.35; }
+}
+
+.tp-status-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.tp-status-link:hover { opacity: 0.8; }
+
+.tp-status-state {
+  flex-shrink: 0;
+  font-style: italic;
+}
+
+.tp-status-right {
+  margin-left: auto;
+}
