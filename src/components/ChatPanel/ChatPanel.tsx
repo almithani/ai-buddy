@@ -174,8 +174,16 @@ export default function ChatPanel() {
       setMessages((m) => [...m, { id: nextId++, role: "buddy", text }]);
     }
 
-    const unlistenStarted = listen("transcription-started", () => {
-      injectBuddyMessage("I've started transcription for you. 🎙");
+    const unlistenStarted = listen<string>("transcription-started", (event) => {
+      const livePath = event.payload;
+      if (livePath) {
+        const filename = livePath.split("/").pop() ?? livePath;
+        injectBuddyMessage(
+          `I've started transcription for you. 🎙 Live notes: [${filename}](aibuddy-reveal://${encodeURIComponent(livePath)})`
+        );
+      } else {
+        injectBuddyMessage("I've started transcription for you. 🎙");
+      }
     });
     const unlistenStopped = listen("transcription-stopped", () => {
       injectBuddyMessage("I've stopped recording.");
@@ -192,6 +200,9 @@ export default function ChatPanel() {
         `I couldn't save your transcript: ${event.payload}\n\nYour transcript is still in the Transcript tab — you can copy it from there.`
       );
     });
+    const unlistenWarning = listen<string>("transcription-warning", (event) => {
+      injectBuddyMessage(`Heads up: ${event.payload}`);
+    });
     const unlistenError = listen<string>("transcription-error", (event) => {
       injectBuddyMessage(`Something went wrong with transcription: ${event.payload}`);
     });
@@ -201,6 +212,7 @@ export default function ChatPanel() {
       unlistenStopped.then((fn) => fn());
       unlistenSaved.then((fn) => fn());
       unlistenSaveFailed.then((fn) => fn());
+      unlistenWarning.then((fn) => fn());
       unlistenError.then((fn) => fn());
     };
   }, []);

@@ -4,6 +4,7 @@ mod accessibility;
 mod download;
 mod llm;
 mod memory;
+mod speech_assets;
 mod transcription;
 
 use memory::DbState;
@@ -186,6 +187,7 @@ pub fn run() {
             app.manage(TranscriptStore {
                 segments: std::sync::Mutex::new(Vec::new()),
                 session_start: std::sync::Mutex::new(None),
+                live_path: std::sync::Mutex::new(None),
             });
 
             // --- Accessibility: previous frontmost app PID ---
@@ -294,6 +296,8 @@ pub fn run() {
             // Transcription
             transcription::transcription_auth_status,
             transcription::request_transcription_permission,
+            speech_assets::speech_assets_status,
+            speech_assets::install_speech_assets,
             open_speech_settings,
             transcription::is_transcribing,
             transcription::start_transcription,

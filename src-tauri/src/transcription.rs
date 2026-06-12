@@ -14,6 +14,9 @@ pub struct TranscriptionActive(pub AtomicBool);
 pub struct TranscriptStore {
     pub segments: Mutex<Vec<StoredSegment>>,
     pub session_start: Mutex<Option<SystemTime>>,
+    /// The in-progress meeting-notes file, created at session start and
+    /// rewritten on every final segment; renamed to its real name on save.
+    pub live_path: Mutex<Option<std::path::PathBuf>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -61,12 +64,23 @@ extern "C" fn on_speech(source: i32, text: *const c_char, is_final: bool, _ctx: 
     // The C string is only valid for the duration of this call — copy it now.
     let text = unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned();
 
+    if source == -2 {
+        // Non-fatal warning (e.g. a lane cooling down after repeated errors).
+        app.emit("transcription-warning", text).ok();
+        return;
+    }
     if source < 0 {
-        // Session-level error from ObjC: flip state off and notify the frontend.
+        // Fatal session error: flip state off, notify the frontend, and save
+        // whatever we have — an abnormal stop must not lose the transcript.
         app.state::<TranscriptionActive>()
             .0
             .store(false, Ordering::SeqCst);
         app.emit("transcription-error", text).ok();
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+            save_transcript(&app);
+        });
         return;
     }
 
@@ -85,6 +99,7 @@ extern "C" fn on_speech(source: i32, text: *const c_char, is_final: bool, _ctx: 
             });
             eprintln!("[AiBuddy] transcript store: {} segment(s)", segs.len());
         }
+        update_live_file(app);
     }
 
     app.emit(
@@ -92,6 +107,30 @@ extern "C" fn on_speech(source: i32, text: *const c_char, is_final: bool, _ctx: 
         TranscriptionSegment { source, text, is_final },
     )
     .ok();
+}
+
+/// Re-render the whole meeting-notes file from the store. Called on every
+/// final segment — files are tiny, and a full rewrite keeps the live file in
+/// exactly the format the final save produces.
+fn update_live_file(app: &AppHandle) {
+    let store = app.state::<TranscriptStore>();
+    let Some(path) = store.live_path.lock().ok().and_then(|g| g.clone()) else {
+        return;
+    };
+    let Ok(segments) = store.segments.lock().map(|s| s.clone()) else {
+        return;
+    };
+    let started: chrono::DateTime<chrono::Local> = store
+        .session_start
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .unwrap_or_else(SystemTime::now)
+        .into();
+    let md = render_markdown("Meeting in progress", started, &segments);
+    if let Err(e) = std::fs::write(&path, md) {
+        eprintln!("[AiBuddy] live notes write failed ({}): {e}", path.display());
+    }
 }
 
 fn auth_status_name(status: i32) -> &'static str {
@@ -166,15 +205,27 @@ pub fn start_transcription(
         let rc = unsafe { aibuddy_speech_start(on_speech, std::ptr::null_mut()) };
         match rc {
             0 => {
+                let now = SystemTime::now();
                 let store = app.state::<TranscriptStore>();
                 if let Ok(mut segs) = store.segments.lock() {
                     segs.clear();
                 }
                 if let Ok(mut start) = store.session_start.lock() {
-                    *start = Some(SystemTime::now());
+                    *start = Some(now);
                 }
+
+                // Create the live meeting-notes file up front so the user can
+                // watch it grow; renamed to its real subject on save.
+                let live = create_live_file(&app, now);
+                if let Ok(mut lp) = store.live_path.lock() {
+                    *lp = live.clone();
+                }
+
                 state.0.store(true, Ordering::SeqCst);
-                app.emit("transcription-started", ()).ok();
+                let live_str = live
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                app.emit("transcription-started", live_str).ok();
                 Ok(())
             }
             -1 => Err("Transcription requires macOS 13.0 or later".to_string()),
@@ -210,11 +261,12 @@ pub fn stop_transcription(
     state.0.store(false, Ordering::SeqCst);
     app.emit("transcription-stopped", ()).ok();
 
-    // The session's last final flushes up to ~3 s after stop (lanes stay alive
-    // that long to receive it) — wait before saving so the file has the tail.
-    eprintln!("[AiBuddy] transcription stopped — save scheduled in 3.5 s");
+    // The session's last text flushes up to ~4 s after stop (lanes stay alive
+    // past the 2 s pending-flush timeout) — wait before saving so the file
+    // has the tail.
+    eprintln!("[AiBuddy] transcription stopped — save scheduled in 4.5 s");
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(3500));
+        std::thread::sleep(std::time::Duration::from_millis(4500));
         save_transcript(&app);
     });
     Ok(())
@@ -312,6 +364,37 @@ fn transcript_save_dir(app: &AppHandle) -> std::path::PathBuf {
     expand_home(&configured.unwrap_or_else(|| DEFAULT_TRANSCRIPT_DIR.to_string()))
 }
 
+/// Shared renderer for the live file and the final save.
+fn render_markdown(
+    subject: &str,
+    started: chrono::DateTime<chrono::Local>,
+    segments: &[StoredSegment],
+) -> String {
+    let mut md = format!(
+        "# {}\n\n_Transcribed by AI Buddy on {}_\n\n",
+        subject,
+        started.format("%Y-%m-%d %-I:%M %p")
+    );
+    for (source, ts_ms, text) in fold_turns(segments) {
+        let label = if source == "me" { "Me" } else { "Them" };
+        let when: chrono::DateTime<chrono::Local> =
+            (SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ts_ms)).into();
+        md.push_str(&format!("**{}** ({}): {}\n\n", label, when.format("%-I:%M %p"), text));
+    }
+    md
+}
+
+/// Pick a non-colliding `<stem>.md` path in `dir`.
+fn unique_md_path(dir: &std::path::Path, stem: &str) -> std::path::PathBuf {
+    let mut path = dir.join(format!("{stem}.md"));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}).md"));
+        n += 1;
+    }
+    path
+}
+
 /// Create dir, pick a non-colliding filename, write. Returns the final path.
 fn write_transcript(
     dir: &std::path::Path,
@@ -319,17 +402,37 @@ fn write_transcript(
     content: &str,
 ) -> Result<std::path::PathBuf, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("couldn't create {}: {e}", dir.display()))?;
-
-    // Avoid clobbering an existing file: " (2)", " (3)", …
-    let mut path = dir.join(format!("{stem}.md"));
-    let mut n = 2;
-    while path.exists() {
-        path = dir.join(format!("{stem} ({n}).md"));
-        n += 1;
-    }
-
+    let path = unique_md_path(dir, stem);
     std::fs::write(&path, content).map_err(|e| format!("couldn't write {}: {e}", path.display()))?;
     Ok(path)
+}
+
+/// Create the in-progress meeting-notes file at session start, falling back
+/// to the default dir if the configured one is unwritable.
+fn create_live_file(app: &AppHandle, started: SystemTime) -> Option<std::path::PathBuf> {
+    let started: chrono::DateTime<chrono::Local> = started.into();
+    // The live name always carries the time for uniqueness; the FINAL name
+    // honors the include-time setting at save.
+    let stem = format!("{} - Meeting in progress", started.format("%Y-%m-%d %H%M"));
+    let md = render_markdown("Meeting in progress", started, &[]);
+
+    let dir = transcript_save_dir(app);
+    match write_transcript(&dir, &stem, &md) {
+        Ok(path) => {
+            eprintln!("[AiBuddy] live notes: {}", path.display());
+            Some(path)
+        }
+        Err(first_err) => {
+            let default_dir = expand_home(DEFAULT_TRANSCRIPT_DIR);
+            if default_dir != dir {
+                eprintln!("[AiBuddy] live notes: {first_err} — falling back to {}", default_dir.display());
+                write_transcript(&default_dir, &stem, &md).ok()
+            } else {
+                eprintln!("[AiBuddy] live notes creation failed: {first_err}");
+                None
+            }
+        }
+    }
 }
 
 /// On failure the transcript store is left untouched — the transcript stays
@@ -340,8 +443,14 @@ fn save_transcript(app: &AppHandle) {
         Ok(s) => s.clone(),
         Err(_) => return,
     };
+    let live_path = store.live_path.lock().ok().and_then(|mut g| g.take());
+
     if segments.is_empty() {
         eprintln!("[AiBuddy] transcript save: store empty — nothing to write");
+        // The live file was created at start but holds nothing — clean it up.
+        if let Some(p) = live_path {
+            std::fs::remove_file(p).ok();
+        }
         return;
     }
     eprintln!("[AiBuddy] transcript save: {} segment(s), generating subject…", segments.len());
@@ -371,31 +480,38 @@ fn save_transcript(app: &AppHandle) {
         format!("{} - {}", started.format("%Y-%m-%d"), subject)
     };
 
-    let mut md = format!(
-        "# {}\n\n_Transcribed by AI Buddy on {}_\n\n",
-        subject,
-        started.format("%Y-%m-%d %-I:%M %p")
-    );
-    for (source, ts_ms, text) in fold_turns(&segments) {
-        let label = if source == "me" { "Me" } else { "Them" };
-        let when: chrono::DateTime<chrono::Local> =
-            (SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ts_ms)).into();
-        md.push_str(&format!("**{}** ({}): {}\n\n", label, when.format("%-I:%M %p"), text));
-    }
+    let md = render_markdown(&subject, started, &segments);
 
-    let dir = transcript_save_dir(app);
-    eprintln!("[AiBuddy] transcript save: writing to {}", dir.display());
-
-    let result = write_transcript(&dir, &stem, &md).or_else(|first_err| {
-        // Configured dir failed — fall back to the default location.
-        let default_dir = expand_home(DEFAULT_TRANSCRIPT_DIR);
-        if default_dir != dir {
-            eprintln!("[AiBuddy] transcript save: {first_err} — falling back to {}", default_dir.display());
-            write_transcript(&default_dir, &stem, &md)
-                .map_err(|e2| format!("{first_err}; fallback also failed: {e2}"))
-        } else {
-            Err(first_err)
+    // Preferred path: finalize the live file in place (write real subject,
+    // rename to the real name). Falls back to a fresh write if there is no
+    // live file or finalizing it fails.
+    let result = match &live_path {
+        Some(live) if live.exists() => {
+            let final_path = unique_md_path(live.parent().unwrap_or(std::path::Path::new(".")), &stem);
+            std::fs::write(live, &md)
+                .map_err(|e| format!("couldn't write {}: {e}", live.display()))
+                .and_then(|_| {
+                    std::fs::rename(live, &final_path)
+                        .map(|_| final_path)
+                        .map_err(|e| format!("couldn't rename {}: {e}", live.display()))
+                })
         }
+        _ => Err("no live notes file".to_string()),
+    }
+    .or_else(|live_err| {
+        eprintln!("[AiBuddy] transcript save: {live_err} — writing fresh");
+        let dir = transcript_save_dir(app);
+        write_transcript(&dir, &stem, &md).or_else(|first_err| {
+            // Configured dir failed — fall back to the default location.
+            let default_dir = expand_home(DEFAULT_TRANSCRIPT_DIR);
+            if default_dir != dir {
+                eprintln!("[AiBuddy] transcript save: {first_err} — falling back to {}", default_dir.display());
+                write_transcript(&default_dir, &stem, &md)
+                    .map_err(|e2| format!("{first_err}; fallback also failed: {e2}"))
+            } else {
+                Err(first_err)
+            }
+        })
     });
 
     match result {

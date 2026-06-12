@@ -42,3 +42,46 @@ src-tauri/resources/models/gemma-4-E4B-it-Q4_K_M.gguf
 ```
 
 before running `tauri build`. The app checks that location first on startup.
+
+## Testing a release build
+
+The bundled app shares its data directory with dev builds (`~/Library/Application Support/com.aibuddy.app`), so by default it skips onboarding and reuses the already-downloaded model.
+
+**Re-run onboarding only** (keeps the 5 GB model):
+
+```sh
+rm ~/Library/Application\ Support/com.aibuddy.app/onboarding_complete
+open "src-tauri/target/release/bundle/macos/AI Buddy.app"
+```
+
+**Full fresh-install simulation** (what a new user experiences — onboarding, real model download, all permission prompts):
+
+```sh
+# Stash dev state — don't delete it, your dev setup needs it back
+mv ~/Library/Application\ Support/com.aibuddy.app ~/Library/Application\ Support/com.aibuddy.app.devbackup
+
+open "src-tauri/target/release/bundle/macos/AI Buddy.app"
+```
+
+Restore dev state when done:
+
+```sh
+rm -rf ~/Library/Application\ Support/com.aibuddy.app
+mv ~/Library/Application\ Support/com.aibuddy.app.devbackup ~/Library/Application\ Support/com.aibuddy.app
+```
+
+macOS permission grants (Microphone, Speech Recognition, Screen Recording) are tracked per app bundle by TCC, not in the data folder — the bundled app prompts fresh the first time regardless. To re-test the prompts themselves:
+
+```sh
+tccutil reset Microphone com.aibuddy.app
+tccutil reset SpeechRecognition com.aibuddy.app
+tccutil reset ScreenCapture com.aibuddy.app
+```
+
+## Sharing the build
+
+Send the `.dmg` from `src-tauri/target/release/bundle/dmg/`. Recipients need an **Apple Silicon Mac on macOS 13+**, and should know:
+
+1. **The app is unsigned** — double-clicking shows "damaged or unverified developer". Right-click → **Open** → Open instead (or `xattr -cr "/Applications/AI Buddy.app"`).
+2. First launch downloads ~5 GB (the chat model).
+3. Expect permission prompts for Microphone and Speech Recognition; **Screen Recording** (for meeting-participant audio) is granted in System Settings → Privacy & Security, then relaunch the app.

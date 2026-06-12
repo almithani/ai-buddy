@@ -145,6 +145,15 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
     setPartials({});
 
     try {
+      // macOS 26+: SpeechAnalyzer needs its on-device model installed once
+      // (system-wide, often already present via Dictation).
+      const assets = await invoke<string>("speech_assets_status");
+      if (assets === "download-required") {
+        setError("Downloading the on-device speech model — transcription starts automatically when it finishes…");
+        await invoke("install_speech_assets");
+        setError("");
+      }
+
       let status = await invoke<string>("transcription_auth_status");
       if (status === "notDetermined") {
         status = await invoke<string>("request_transcription_permission");

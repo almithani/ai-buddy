@@ -10,13 +10,32 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// source: 0 = mic ("me"), 1 = system audio ("them"), -1 = session-level error (text = message)
+// source: 0 = mic ("me"), 1 = system audio ("them"),
+//         -1 = fatal session error (text = message), -2 = non-fatal warning
 typedef void (*AiBuddySpeechCallback)(int32_t source, const char* text, bool is_final, void* ctx);
+
+// ── SpeechAnalyzer engine (Swift, speech_analyzer.swift, macOS 26+) ─────────
+extern int32_t aibuddy_sa_available(void);
+extern int32_t aibuddy_sa_assets_status(void);
+extern void    aibuddy_sa_assets_install(void (*progress_cb)(double, void*),
+                                         void (*done_cb)(int32_t, void*),
+                                         void* ctx);
+extern int32_t aibuddy_sa_start(AiBuddySpeechCallback cb, void* ctx);
+extern void    aibuddy_sa_append_pcm(int32_t source, void* buf);
+extern void    aibuddy_sa_append_sample(int32_t source, void* sbuf);
+extern void    aibuddy_sa_stop(void);
+
+// Audio sink: capture sessions are engine-agnostic; they feed whichever sink
+// (legacy SFSpeech lane or SpeechAnalyzer forwarder) they were started with.
+@protocol AiBuddyAudioSink <NSObject>
+- (void)appendPCMBuffer:(AVAudioPCMBuffer*)buf;
+- (void)appendSampleBuffer:(CMSampleBufferRef)buf;
+@end
 
 // ── Speech lane: one recognizer per audio source ───────────────────────────
 
 API_AVAILABLE(macos(13.0))
-@interface AiBuddySpeechLane : NSObject
+@interface AiBuddySpeechLane : NSObject <AiBuddyAudioSink>
 - (instancetype)initWithSource:(int32_t)source
                       callback:(AiBuddySpeechCallback)cb
                        context:(void*)ctx;
@@ -24,6 +43,26 @@ API_AVAILABLE(macos(13.0))
 - (void)appendPCMBuffer:(AVAudioPCMBuffer*)buf;
 - (void)appendSampleBuffer:(CMSampleBufferRef)buf;
 - (void)stop;
+@end
+
+// Forwards capture audio to the Swift SpeechAnalyzer engine.
+@interface AiBuddyAnalyzerSink : NSObject <AiBuddyAudioSink>
+- (instancetype)initWithSource:(int32_t)source;
+@end
+
+@implementation AiBuddyAnalyzerSink {
+    int32_t _source;
+}
+- (instancetype)initWithSource:(int32_t)source {
+    if ((self = [super init])) { _source = source; }
+    return self;
+}
+- (void)appendPCMBuffer:(AVAudioPCMBuffer*)buf {
+    aibuddy_sa_append_pcm(_source, (__bridge void*)buf);
+}
+- (void)appendSampleBuffer:(CMSampleBufferRef)buf {
+    aibuddy_sa_append_sample(_source, (void*)buf);
+}
 @end
 
 // Atomic so audio-thread appends can read it while _q rotates it.
@@ -39,7 +78,8 @@ API_AVAILABLE(macos(13.0))
     void*                    _ctx;
     SFSpeechRecognizer*      _recognizer;
     SFSpeechRecognitionTask* _task;
-    SFSpeechRecognitionTask* _suppressFinalFrom; // task whose partial we already flushed
+    SFSpeechRecognitionTask* _pendingTask;    // task whose request was ended, final awaited
+    NSString*                _pendingPartial; // its last partial at endAudio time
     NSString*                _lastPartial;
     dispatch_queue_t         _q;
     dispatch_source_t        _rotateTimer;
@@ -48,9 +88,10 @@ API_AVAILABLE(macos(13.0))
     volatile NSTimeInterval  _lastEnergyTime;   // written from audio threads, read on _q
     int                      _consecutiveErrors;
     NSTimeInterval           _firstErrorTime;
+    NSTimeInterval           _errorCooldownUntil; // gate won't reopen before this
 }
 
-static const NSTimeInterval kRotateInterval  = 50.0;  // restart request mid-monologue before Apple's ~1 min guidance
+static const NSTimeInterval kRotateInterval  = 25.0;  // restart request mid-monologue; short requests keep partials from lagging
 static const float          kGateThreshold   = 0.008; // RMS above this counts as sound on the lane
 static const NSTimeInterval kGateHold        = 2.0;   // keep listening this long after the last sound
 
@@ -99,20 +140,55 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
 // Must be called on _q.
 - (void)_gateOpen {
     if (!_active || self.request != nil) return;
+    if ([NSDate timeIntervalSinceReferenceDate] < _errorCooldownUntil) return;
     NSLog(@"[AiBuddy] Lane %d: gate open — starting recognition", _source);
     [self _beginTask];
     [self _armRotateTimer];
     [self _armGateTimer];
 }
 
-// Must be called on _q. Deliver the accumulated partial as a final NOW —
-// the recognizer's own post-endAudio final is unreliable (can arrive empty
-// or truncated), so we flush deterministically and suppress the real one.
-- (void)_flushPartialAsFinal {
-    if (_lastPartial.length > 0) {
-        [self _deliverText:_lastPartial final:YES];
-        _lastPartial = nil;
+// ── Pending flush ───────────────────────────────────────────────────────────
+// When a request is ended (gate close / rotation / stop) we do NOT deliver
+// the last partial immediately: partials lag behind the audio (badly, under
+// load), and the recognizer's final for the ended request often contains MORE
+// text. We hold the partial as "pending" and resolve with whichever result is
+// longer. Resolution triggers: the ended task's final, an error from it, a
+// 2 s timeout, or the first result of the next request (ordering guarantee).
+
+// Must be called on _q. Snapshots the current task+partial as pending and
+// ends the request's audio.
+- (void)_endRequestPending:(SFSpeechAudioBufferRecognitionRequest*)req {
+    [self _resolvePendingWith:nil reason:@"superseded"];
+    _pendingTask = _task;
+    _pendingPartial = _lastPartial;
+    _lastPartial = nil;
+    [req endAudio];
+
+    SFSpeechRecognitionTask* pendingAtSchedule = _pendingTask;
+    __weak AiBuddySpeechLane* weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), _q, ^{
+        AiBuddySpeechLane* self = weakSelf;
+        if (!self) return;
+        if (self->_pendingTask == pendingAtSchedule) {
+            [self _resolvePendingWith:nil reason:@"timeout"];
+        }
+    });
+}
+
+// Must be called on _q. Delivers longer(text, pending partial) as a final;
+// nil text means "partial only". No-op when nothing is pending.
+- (void)_resolvePendingWith:(NSString*)text reason:(NSString*)reason {
+    if (_pendingTask == nil && _pendingPartial == nil) return;
+    NSString* partial = _pendingPartial ?: @"";
+    NSString* winner = (text.length > partial.length) ? text : partial;
+    if (winner.length > 0) {
+        NSLog(@"[AiBuddy] Lane %d: pending resolved by %@ (%+ld chars vs partial)",
+              _source, reason,
+              (long)((NSInteger)text.length - (NSInteger)partial.length));
+        [self _deliverText:winner final:YES];
     }
+    _pendingTask = nil;
+    _pendingPartial = nil;
 }
 
 // Must be called on _q.
@@ -121,9 +197,7 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
     NSLog(@"[AiBuddy] Lane %d: gate closed — ending recognition", _source);
     SFSpeechAudioBufferRecognitionRequest* req = self.request;
     self.request = nil;            // appends stop; idle until next sound
-    _suppressFinalFrom = _task;
-    [self _flushPartialAsFinal];
-    [req endAudio];
+    [self _endRequestPending:req];
     [self _cancelTimers];
 }
 
@@ -171,26 +245,44 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
             AiBuddySpeechLane* self = weakSelf;
             if (!self) return;
             dispatch_async(self->_q, ^{
-                // Finals from a request we already flushed ourselves
-                // (gate close / rotation / stop) would be duplicates — drop them.
-                BOOL suppressed = (thisTask == self->_suppressFinalFrom);
-                if (suppressed && result && result.isFinal) {
-                    self->_suppressFinalFrom = nil;
-                }
-
-                // Callbacks from a task that has been rotated out.
-                if (thisTask != self->_task) {
-                    if (result && result.isFinal && !suppressed) {
-                        [self _deliverText:result.bestTranscription.formattedString final:YES];
+                // Results from the ended (pending) request resolve the pending flush.
+                if (thisTask == self->_pendingTask) {
+                    if (result && result.isFinal) {
+                        [self _resolvePendingWith:result.bestTranscription.formattedString
+                                           reason:@"final"];
+                    } else if (result) {
+                        // Late partials can still grow past the snapshot.
+                        NSString* text = result.bestTranscription.formattedString;
+                        if (text.length > self->_pendingPartial.length) {
+                            self->_pendingPartial = text;
+                        }
+                    } else if (error) {
+                        [self _resolvePendingWith:nil reason:@"error"];
                     }
                     return;
                 }
+
+                // Neither current nor pending: already resolved/rotated out — drop.
+                if (thisTask != self->_task) return;
+
+                // Ordering guarantee: the previous request's text must land
+                // before anything from this one.
+                if (self->_pendingTask != nil) {
+                    [self _resolvePendingWith:nil reason:@"next-task result"];
+                }
+
                 if (result) {
                     NSString* text = result.bestTranscription.formattedString;
                     if (result.isFinal) {
-                        if (!suppressed) {
-                            [self _deliverText:text final:YES];
+                        // Natural (mid-stream) finals can be TRUNCATED relative
+                        // to the last partial. The dropped tail's audio is gone
+                        // from recognition, so never deliver less text than the
+                        // user already saw.
+                        NSString* deliver = text;
+                        if (self->_lastPartial.length > deliver.length) {
+                            deliver = self->_lastPartial;
                         }
+                        [self _deliverText:deliver final:YES];
                         self->_lastPartial = nil;
                         self->_consecutiveErrors = 0;
                         if (self.request != nil) {
@@ -198,8 +290,9 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
                             [self _beginTask];
                             [self _armRotateTimer];
                         }
-                    } else if (!suppressed) {
+                    } else {
                         self->_lastPartial = text;
+                        self->_consecutiveErrors = 0; // results flowing = recovered
                         [self _deliverText:text final:NO];
                     }
                 } else if (error && self->_active) {
@@ -219,8 +312,12 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
     _cb(_source, trimmed.UTF8String, final, _ctx);
 }
 
-// Must be called on _q.
+// Must be called on _q. Only reached for errors on the CURRENT task
+// (pending-task errors are resolved in the result handler).
 - (void)_handleError:(NSError*)error {
+    // Ordering: any pending previous-request text lands first.
+    [self _resolvePendingWith:nil reason:@"error on next task"];
+
     // Don't lose in-flight text: promote the last partial to a final.
     if (_lastPartial.length > 0) {
         [self _deliverText:_lastPartial final:YES];
@@ -247,20 +344,24 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
     }
     _consecutiveErrors++;
 
+    // Never kill the session — meetings must survive speech-service hiccups.
+    // Repeated errors put the lane in a 30 s cooldown (then the energy gate
+    // retries); isolated errors get a 1 s cooldown to avoid churn.
     if (_consecutiveErrors > 5) {
-        NSLog(@"[AiBuddy] Speech lane %d giving up: %@", _source, error.localizedDescription);
-        _active = NO;
-        self.request = nil;
-        [self _cancelTimers];
+        NSLog(@"[AiBuddy] Speech lane %d: repeated errors, cooling down 30 s: %@",
+              _source, error.localizedDescription);
+        _consecutiveErrors = 0;
+        _errorCooldownUntil = now + 30.0;
         if (_cb) {
             NSString* msg = [NSString stringWithFormat:
-                @"Speech recognition failed repeatedly: %@", error.localizedDescription];
-            _cb(-1, msg.UTF8String, true, _ctx);
+                @"%@ speech recognition hit repeated errors (%@) — pausing that audio source for 30 seconds, then retrying automatically.",
+                _source == 0 ? @"Microphone" : @"System-audio", error.localizedDescription];
+            _cb(-2, msg.UTF8String, true, _ctx);
         }
-        return;
+    } else {
+        _errorCooldownUntil = now + 1.0;
     }
 
-    // Real error but not fatal yet — go idle and let the gate retry on sound.
     self.request = nil;
     [self _cancelTimers];
 }
@@ -286,10 +387,8 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
 - (void)_rotate {
     if (!_active || self.request == nil) return;
     SFSpeechAudioBufferRecognitionRequest* oldReq = self.request;
-    _suppressFinalFrom = _task;
-    [self _flushPartialAsFinal];
-    [self _beginTask];          // swaps request and _task; appends now land in the new request
-    [oldReq endAudio];
+    [self _endRequestPending:oldReq]; // snapshots the OLD task/partial before the swap
+    [self _beginTask];                // swaps request and _task; appends now land in the new request
     [self _armRotateTimer];
 }
 
@@ -331,13 +430,11 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
         [self _cancelTimers];
         SFSpeechAudioBufferRecognitionRequest* req = self.request;
         self.request = nil;
-        self->_suppressFinalFrom = self->_task;
-        [self _flushPartialAsFinal];
-        [req endAudio];
+        if (req) [self _endRequestPending:req];
         // The result handler only holds a WEAK reference to the lane; capture
-        // self strongly here so the lane survives long enough to clean up the
-        // in-flight task, then cancel it.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)),
+        // self strongly here so the lane survives past the 2 s pending-flush
+        // timeout, then cancel the in-flight task.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)),
                        self->_q, ^{ [self->_task cancel]; });
     });
 }
@@ -348,18 +445,18 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
 
 API_AVAILABLE(macos(13.0))
 @interface AiBuddyCaptureSession : NSObject <SCStreamOutput, SCStreamDelegate>
-- (void)startWithLane:(AiBuddySpeechLane*)lane;
+- (void)startWithSink:(id<AiBuddyAudioSink>)lane;
 - (void)stop;
 @end
 
 API_AVAILABLE(macos(13.0))
 @implementation AiBuddyCaptureSession {
-    AiBuddySpeechLane* _lane;
+    id<AiBuddyAudioSink> _lane;
     SCStream*          _stream;
     volatile BOOL      _active;
 }
 
-- (void)startWithLane:(AiBuddySpeechLane*)lane {
+- (void)startWithSink:(id<AiBuddyAudioSink>)lane {
     _lane   = lane;
     _active = YES;
 
@@ -433,19 +530,19 @@ API_AVAILABLE(macos(13.0))
 
 API_AVAILABLE(macos(13.0))
 @interface AiBuddyMicSession : NSObject
-- (void)startWithLane:(AiBuddySpeechLane*)lane;
+- (void)startWithSink:(id<AiBuddyAudioSink>)lane;
 - (void)stop;
 @end
 
 API_AVAILABLE(macos(13.0))
 @implementation AiBuddyMicSession {
-    AiBuddySpeechLane* _lane;
+    id<AiBuddyAudioSink> _lane;
     AVAudioEngine*     _engine;
     id                 _configObserver;
     volatile BOOL      _active;
 }
 
-- (void)startWithLane:(AiBuddySpeechLane*)lane {
+- (void)startWithSink:(id<AiBuddyAudioSink>)lane {
     _lane   = lane;
     _active = YES;
     // AVAudioEngine must be set up and started on the main thread.
@@ -540,20 +637,35 @@ API_AVAILABLE(macos(13.0))
 
 // ── Global sessions (one of each at a time) ────────────────────────────────
 
-static id gSCSession  = nil;
-static id gMicSession = nil;
-static id gMicLane    = nil;
-static id gSystemLane = nil;
+static id   gSCSession     = nil;
+static id   gMicSession    = nil;
+static id   gMicLane       = nil; // legacy SFSpeech lanes OR analyzer sinks
+static id   gSystemLane    = nil;
+static BOOL gUsingAnalyzer = NO;
 
 static void aibuddy_teardown(void) API_AVAILABLE(macos(13.0)) {
     if (gSCSession)  { [(AiBuddyCaptureSession*)gSCSession stop];  gSCSession  = nil; }
     if (gMicSession) { [(AiBuddyMicSession*)gMicSession stop];     gMicSession = nil; }
-    if (gMicLane)    { [(AiBuddySpeechLane*)gMicLane stop];        gMicLane    = nil; }
-    if (gSystemLane) { [(AiBuddySpeechLane*)gSystemLane stop];     gSystemLane = nil; }
+    if (gUsingAnalyzer) {
+        // Sinks are stateless forwarders; the Swift engine owns the lanes.
+        gMicLane    = nil;
+        gSystemLane = nil;
+        gUsingAnalyzer = NO;
+        aibuddy_sa_stop(); // finalizes; trailing finals flush via the callback
+    } else {
+        if (gMicLane)    { [(AiBuddySpeechLane*)gMicLane stop];    gMicLane    = nil; }
+        if (gSystemLane) { [(AiBuddySpeechLane*)gSystemLane stop]; gSystemLane = nil; }
+    }
 }
 
 // Raw SFSpeechRecognizerAuthorizationStatus: 0 notDetermined, 1 denied, 2 restricted, 3 authorized
 int32_t aibuddy_speech_auth_status(void) {
+    if (@available(macOS 26.0, *)) {
+        // SpeechAnalyzer path needs no Speech Recognition TCC permission.
+        if (aibuddy_sa_available() == 1) {
+            return 3; // report "authorized" so the frontend flow proceeds
+        }
+    }
     return (int32_t)[SFSpeechRecognizer authorizationStatus];
 }
 
@@ -566,10 +678,35 @@ void aibuddy_speech_request_auth(void (*cb)(int32_t status, void* ctx), void* ct
 // 0 = started; -1 = macOS < 13; -2 = not authorized; -3 = on-device recognition unavailable
 int32_t aibuddy_speech_start(AiBuddySpeechCallback cb, void* ctx) {
     if (@available(macOS 13.0, *)) {
+        aibuddy_teardown();
+
+        // Preferred engine: SpeechAnalyzer (macOS 26+, no TCC needed,
+        // concurrent dual-stream supported).
+        if (@available(macOS 26.0, *)) {
+            if (aibuddy_sa_available() == 1 && aibuddy_sa_start(cb, ctx) == 0) {
+                NSLog(@"[AiBuddy] using SpeechAnalyzer engine");
+                gUsingAnalyzer = YES;
+                AiBuddyAnalyzerSink* micSink =
+                    [[AiBuddyAnalyzerSink alloc] initWithSource:0];
+                AiBuddyAnalyzerSink* sysSink =
+                    [[AiBuddyAnalyzerSink alloc] initWithSource:1];
+                gMicLane    = micSink;
+                gSystemLane = sysSink;
+
+                gSCSession = [[AiBuddyCaptureSession alloc] init];
+                [(AiBuddyCaptureSession*)gSCSession startWithSink:sysSink];
+
+                gMicSession = [[AiBuddyMicSession alloc] init];
+                [(AiBuddyMicSession*)gMicSession startWithSink:micSink];
+                return 0;
+            }
+            NSLog(@"[AiBuddy] SpeechAnalyzer unavailable — falling back to SFSpeechRecognizer");
+        }
+
+        // Legacy engine: SFSpeechRecognizer lanes (TCC permission required).
         if ([SFSpeechRecognizer authorizationStatus] != SFSpeechRecognizerAuthorizationStatusAuthorized) {
             return -2;
         }
-        aibuddy_teardown();
 
         AiBuddySpeechLane* micLane = [[AiBuddySpeechLane alloc]
             initWithSource:0 callback:cb context:ctx];
@@ -585,10 +722,10 @@ int32_t aibuddy_speech_start(AiBuddySpeechCallback cb, void* ctx) {
         gSystemLane = sysLane;
 
         gSCSession = [[AiBuddyCaptureSession alloc] init];
-        [(AiBuddyCaptureSession*)gSCSession startWithLane:sysLane];
+        [(AiBuddyCaptureSession*)gSCSession startWithSink:sysLane];
 
         gMicSession = [[AiBuddyMicSession alloc] init];
-        [(AiBuddyMicSession*)gMicSession startWithLane:micLane];
+        [(AiBuddyMicSession*)gMicSession startWithSink:micLane];
 
         return 0;
     }
