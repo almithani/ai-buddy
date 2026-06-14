@@ -71,6 +71,8 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
   const [livePath, setLivePath] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [diarStatus, setDiarStatus] = useState<"unknown" | "missing" | "installed" | "downloading">("unknown");
+  const [diarProgress, setDiarProgress] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const partialsRef = useRef<Partials>({});
@@ -155,6 +157,24 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       setLivePath(null); // empty session: live file was deleted
     });
 
+    // Speaker-diarization model availability (offer download if missing).
+    invoke<string>("diarization_models_status")
+      .then((s) => setDiarStatus(s === "installed" ? "installed" : "missing"))
+      .catch(() => setDiarStatus("installed")); // hide the note if the check fails
+    const unlistenDiar = listen<{ progress: number; done: boolean; error?: string }>(
+      "diarization-download-progress",
+      (event) => {
+        const { progress, done, error } = event.payload;
+        if (error) {
+          setDiarStatus("missing");
+        } else if (done) {
+          setDiarStatus("installed");
+        } else {
+          setDiarProgress(progress);
+        }
+      }
+    );
+
     return () => {
       unlistenSegment.then((fn) => fn());
       unlistenError.then((fn) => fn());
@@ -162,8 +182,15 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       unlistenSaved.then((fn) => fn());
       unlistenSaveFailed.then((fn) => fn());
       unlistenDiscarded.then((fn) => fn());
+      unlistenDiar.then((fn) => fn());
     };
   }, []);
+
+  function handleDiarDownload() {
+    setDiarStatus("downloading");
+    setDiarProgress(0);
+    invoke("install_diarization_models").catch(() => setDiarStatus("missing"));
+  }
 
   async function handleStartStop() {
     if (transcribing) {
@@ -261,6 +288,20 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       </div>
 
       {error && <p className="tp-error tp-error-inline">{error}</p>}
+
+      {!transcribing && diarStatus === "missing" && (
+        <div className="tp-diar-note">
+          <span>🗣 Identify individual speakers in meetings</span>
+          <button className="tp-btn tp-btn-ghost" onClick={handleDiarDownload}>
+            Download model (~36 MB)
+          </button>
+        </div>
+      )}
+      {diarStatus === "downloading" && (
+        <div className="tp-diar-note">
+          <span>Downloading speaker model… {Math.round(diarProgress)}%</span>
+        </div>
+      )}
 
       {livePath ? (
         <div className="tp-statusbar">

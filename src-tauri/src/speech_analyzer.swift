@@ -17,8 +17,9 @@ import Foundation
 import Speech
 
 // source: 0 = mic ("me"), 1 = system audio ("them"), -2 = non-fatal warning
+// start/end are audio-relative seconds (-1 when unknown).
 public typealias AiBuddySpeechCallbackSwift =
-    @convention(c) (Int32, UnsafePointer<CChar>?, Bool, UnsafeMutableRawPointer?) -> Void
+    @convention(c) (Int32, UnsafePointer<CChar>?, Bool, Double, Double, UnsafeMutableRawPointer?) -> Void
 
 // ── Lane ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,11 @@ final class AnalyzerLane: @unchecked Sendable {
     private var converter: AVAudioConverter?
     private var lastInputFormat: AVAudioFormat?
 
-    init?(source: Int32, locale: Locale,
+    // Optional recording of the converted stream (for post-meeting diarization).
+    private let fileLock = NSLock()
+    private var audioFile: AVAudioFile?
+
+    init?(source: Int32, locale: Locale, recordPath: String?,
           cb: @escaping AiBuddySpeechCallbackSwift, ctx: UnsafeMutableRawPointer?) async {
         self.source = source
         self.cb = cb
@@ -48,7 +53,7 @@ final class AnalyzerLane: @unchecked Sendable {
             locale: locale,
             transcriptionOptions: [],
             reportingOptions: [.volatileResults],
-            attributeOptions: []
+            attributeOptions: [.audioTimeRange]
         )
         self.transcriber = transcriber
         self.analyzer = SpeechAnalyzer(modules: [transcriber])
@@ -58,6 +63,21 @@ final class AnalyzerLane: @unchecked Sendable {
             return nil
         }
         self.analyzerFormat = fmt
+
+        // Record the converted (analyzer-format) stream to WAV for diarization.
+        if let recordPath {
+            do {
+                self.audioFile = try AVAudioFile(
+                    forWriting: URL(fileURLWithPath: recordPath),
+                    settings: fmt.settings,
+                    commonFormat: fmt.commonFormat,
+                    interleaved: fmt.isInterleaved)
+                NSLog("[AiBuddy] SA lane %d: recording to %@", source, recordPath)
+            } catch {
+                NSLog("[AiBuddy] SA lane %d: recording open failed: %@",
+                      source, error.localizedDescription)
+            }
+        }
 
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         self.continuation = continuation
@@ -80,8 +100,11 @@ final class AnalyzerLane: @unchecked Sendable {
                     let text = String(result.text.characters)
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty {
+                        let range = result.range
+                        let start = range.start.isNumeric ? range.start.seconds : -1.0
+                        let end = range.end.isNumeric ? range.end.seconds : -1.0
                         text.withCString { cstr in
-                            self.cb(self.source, cstr, result.isFinal, self.ctx)
+                            self.cb(self.source, cstr, result.isFinal, start, end, self.ctx)
                         }
                     }
                 }
@@ -91,7 +114,7 @@ final class AnalyzerLane: @unchecked Sendable {
                       self.source, error.localizedDescription)
                 let msg = "Speech analysis error on \(self.source == 0 ? "microphone" : "system audio"): \(error.localizedDescription)"
                 msg.withCString { cstr in
-                    self.cb(-2, cstr, true, self.ctx)
+                    self.cb(-2, cstr, true, -1.0, -1.0, self.ctx)
                 }
             }
         }
@@ -102,6 +125,11 @@ final class AnalyzerLane: @unchecked Sendable {
     /// is never referenced after return.
     func append(_ buf: AVAudioPCMBuffer) {
         guard let converted = convert(buf) else { return }
+        if audioFile != nil {
+            fileLock.lock()
+            try? audioFile?.write(from: converted)
+            fileLock.unlock()
+        }
         continuation.yield(AnalyzerInput(buffer: converted))
     }
 
@@ -189,6 +217,10 @@ final class AnalyzerLane: @unchecked Sendable {
 
     func stop() {
         continuation.finish()
+        // Close the recording — releasing the AVAudioFile flushes the WAV header.
+        fileLock.lock()
+        audioFile = nil
+        fileLock.unlock()
         let analyzer = self.analyzer
         let source = self.source
         Task {
@@ -308,13 +340,16 @@ public func aibuddy_sa_assets_install(
 }
 
 /// 0 ok, -1 unavailable, -3 assets/locale unavailable.
+/// recordWavPath (nullable): records the Them stream (source 1) for diarization.
 @_cdecl("aibuddy_sa_start")
 public func aibuddy_sa_start(
     _ cb: AiBuddySpeechCallbackSwift,
-    _ ctx: UnsafeMutableRawPointer?
+    _ ctx: UnsafeMutableRawPointer?,
+    _ recordWavPath: UnsafePointer<CChar>?
 ) -> Int32 {
     guard #available(macOS 26.0, *) else { return -1 }
     nonisolated(unsafe) let uctx = ctx
+    let recordPath = recordWavPath.map { String(cString: $0) }
     return blockingAsync {
         guard let locale = await SAEngine.resolveLocale() else { return Int32(-3) }
 
@@ -324,8 +359,10 @@ public func aibuddy_sa_start(
         SAEngine.lock.unlock()
         for (_, lane) in old { lane.stop() }
 
-        guard let mic = await AnalyzerLane(source: 0, locale: locale, cb: cb, ctx: uctx),
-              let sys = await AnalyzerLane(source: 1, locale: locale, cb: cb, ctx: uctx)
+        guard let mic = await AnalyzerLane(source: 0, locale: locale, recordPath: nil,
+                                           cb: cb, ctx: uctx),
+              let sys = await AnalyzerLane(source: 1, locale: locale, recordPath: recordPath,
+                                           cb: cb, ctx: uctx)
         else {
             return Int32(-3)
         }

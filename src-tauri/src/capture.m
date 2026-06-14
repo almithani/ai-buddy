@@ -12,7 +12,9 @@
 
 // source: 0 = mic ("me"), 1 = system audio ("them"),
 //         -1 = fatal session error (text = message), -2 = non-fatal warning
-typedef void (*AiBuddySpeechCallback)(int32_t source, const char* text, bool is_final, void* ctx);
+// start_sec/end_sec: audio-relative seconds (-1 when unknown, e.g. legacy engine).
+typedef void (*AiBuddySpeechCallback)(int32_t source, const char* text, bool is_final,
+                                      double start_sec, double end_sec, void* ctx);
 
 // ── SpeechAnalyzer engine (Swift, speech_analyzer.swift, macOS 26+) ─────────
 extern int32_t aibuddy_sa_available(void);
@@ -20,7 +22,8 @@ extern int32_t aibuddy_sa_assets_status(void);
 extern void    aibuddy_sa_assets_install(void (*progress_cb)(double, void*),
                                          void (*done_cb)(int32_t, void*),
                                          void* ctx);
-extern int32_t aibuddy_sa_start(AiBuddySpeechCallback cb, void* ctx);
+extern int32_t aibuddy_sa_start(AiBuddySpeechCallback cb, void* ctx,
+                                const char* record_wav_path);
 extern void    aibuddy_sa_append_pcm(int32_t source, void* buf);
 extern void    aibuddy_sa_append_sample(int32_t source, void* sbuf);
 extern void    aibuddy_sa_stop(void);
@@ -309,7 +312,8 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
     NSString* trimmed = [text stringByTrimmingCharactersInSet:
         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (trimmed.length == 0) return;
-    _cb(_source, trimmed.UTF8String, final, _ctx);
+    // Legacy SFSpeech path has no audio-relative time ranges.
+    _cb(_source, trimmed.UTF8String, final, -1.0, -1.0, _ctx);
 }
 
 // Must be called on _q. Only reached for errors on the CURRENT task
@@ -356,7 +360,7 @@ static const NSTimeInterval kGateHold        = 2.0;   // keep listening this lon
             NSString* msg = [NSString stringWithFormat:
                 @"%@ speech recognition hit repeated errors (%@) — pausing that audio source for 30 seconds, then retrying automatically.",
                 _source == 0 ? @"Microphone" : @"System-audio", error.localizedDescription];
-            _cb(-2, msg.UTF8String, true, _ctx);
+            _cb(-2, msg.UTF8String, true, -1.0, -1.0, _ctx);
         }
     } else {
         _errorCooldownUntil = now + 1.0;
@@ -676,14 +680,17 @@ void aibuddy_speech_request_auth(void (*cb)(int32_t status, void* ctx), void* ct
 }
 
 // 0 = started; -1 = macOS < 13; -2 = not authorized; -3 = on-device recognition unavailable
-int32_t aibuddy_speech_start(AiBuddySpeechCallback cb, void* ctx) {
+// record_wav_path (nullable): if set, the SpeechAnalyzer path records the Them
+// stream to this WAV for post-meeting diarization. Ignored by the legacy path.
+int32_t aibuddy_speech_start(AiBuddySpeechCallback cb, void* ctx,
+                             const char* record_wav_path) {
     if (@available(macOS 13.0, *)) {
         aibuddy_teardown();
 
         // Preferred engine: SpeechAnalyzer (macOS 26+, no TCC needed,
         // concurrent dual-stream supported).
         if (@available(macOS 26.0, *)) {
-            if (aibuddy_sa_available() == 1 && aibuddy_sa_start(cb, ctx) == 0) {
+            if (aibuddy_sa_available() == 1 && aibuddy_sa_start(cb, ctx, record_wav_path) == 0) {
                 NSLog(@"[AiBuddy] using SpeechAnalyzer engine");
                 gUsingAnalyzer = YES;
                 AiBuddyAnalyzerSink* micSink =

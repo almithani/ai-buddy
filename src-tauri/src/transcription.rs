@@ -24,9 +24,12 @@ pub struct TranscriptStore {
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredSegment {
-    pub source: String, // "me" | "them"
+    pub source: String, // "me" | "them" | "Speaker N" (after diarization)
     pub text: String,
     pub ts_ms: u64,
+    /// Audio-relative seconds (None for the legacy engine / unknown).
+    pub start_sec: Option<f64>,
+    pub end_sec: Option<f64>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -50,15 +53,23 @@ extern "C" {
     );
     /// 0 = started; -1 = macOS < 13; -2 = unauthorized; -3 = on-device unavailable
     fn aibuddy_speech_start(
-        cb: extern "C" fn(i32, *const c_char, bool, *mut c_void),
+        cb: extern "C" fn(i32, *const c_char, bool, f64, f64, *mut c_void),
         ctx: *mut c_void,
+        record_wav_path: *const c_char,
     ) -> i32;
     fn aibuddy_speech_stop();
 }
 
 /// Fired by the ObjC speech lanes on arbitrary dispatch queues.
 #[cfg(target_os = "macos")]
-extern "C" fn on_speech(source: i32, text: *const c_char, is_final: bool, _ctx: *mut c_void) {
+extern "C" fn on_speech(
+    source: i32,
+    text: *const c_char,
+    is_final: bool,
+    start_sec: f64,
+    end_sec: f64,
+    _ctx: *mut c_void,
+) {
     let Some(app) = APP.get() else { return };
     if text.is_null() {
         return;
@@ -98,6 +109,8 @@ extern "C" fn on_speech(source: i32, text: *const c_char, is_final: bool, _ctx: 
                 source: source.clone(),
                 text: text.clone(),
                 ts_ms,
+                start_sec: (start_sec >= 0.0).then_some(start_sec),
+                end_sec: (end_sec >= 0.0).then_some(end_sec),
             });
             eprintln!("[AiBuddy] transcript store: {} segment(s)", segs.len());
         }
@@ -133,6 +146,15 @@ fn update_live_file(app: &AppHandle) {
     if let Err(e) = std::fs::write(&path, md) {
         eprintln!("[AiBuddy] live notes write failed ({}): {e}", path.display());
     }
+}
+
+/// Temp WAV holding the current session's Them stream (for diarization).
+/// Deleted after the save attributes speakers.
+fn them_session_wav_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("them-session.wav"))
 }
 
 fn auth_status_name(status: i32) -> &'static str {
@@ -204,7 +226,27 @@ pub fn start_transcription(
     #[cfg(target_os = "macos")]
     {
         APP.get_or_init(|| app.clone());
-        let rc = unsafe { aibuddy_speech_start(on_speech, std::ptr::null_mut()) };
+
+        // Record the Them stream for post-meeting diarization, but only when
+        // the diarization models are installed (otherwise no recording at all).
+        let wav = them_session_wav_path(&app);
+        let record_c: Option<std::ffi::CString> =
+            if crate::diarization::models_installed(&app) {
+                if let Some(ref p) = wav {
+                    std::fs::remove_file(p).ok(); // clear any stale recording
+                }
+                wav.as_ref()
+                    .and_then(|p| p.to_str())
+                    .and_then(|s| std::ffi::CString::new(s).ok())
+            } else {
+                None
+            };
+        let record_ptr = record_c
+            .as_ref()
+            .map(|c| c.as_ptr())
+            .unwrap_or(std::ptr::null());
+
+        let rc = unsafe { aibuddy_speech_start(on_speech, std::ptr::null_mut(), record_ptr) };
         match rc {
             0 => {
                 let now = SystemTime::now();
@@ -398,12 +440,56 @@ fn render_markdown(
         started.format("%Y-%m-%d %-I:%M %p")
     );
     for (source, ts_ms, text) in fold_turns(segments) {
-        let label = if source == "me" { "Me" } else { "Them" };
+        // After diarization, `source` is already a speaker label (e.g. "Speaker 1").
+        let label = match source.as_str() {
+            "me" => "Me".to_string(),
+            "them" => "Them".to_string(),
+            other => other.to_string(),
+        };
         let when: chrono::DateTime<chrono::Local> =
             (SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(ts_ms)).into();
         md.push_str(&format!("**{}** ({}): {}\n\n", label, when.format("%-I:%M %p"), text));
     }
     md
+}
+
+/// Replace the "them" source of each segment with a "Speaker N" label by
+/// intersecting its audio time range against diarization segments. Segments
+/// without a time range, or with no overlap, keep "them". "me" is untouched.
+fn apply_diarization(segments: &mut [StoredSegment], speakers: &[crate::diarization::SpeakerSegment]) {
+    if speakers.is_empty() {
+        return;
+    }
+    // Map raw speaker index → 1-based display number in first-appearance order.
+    let mut order: Vec<i32> = Vec::new();
+    let mut display = |raw: i32| -> usize {
+        if let Some(pos) = order.iter().position(|&s| s == raw) {
+            pos + 1
+        } else {
+            order.push(raw);
+            order.len()
+        }
+    };
+
+    for seg in segments.iter_mut() {
+        if seg.source != "them" {
+            continue;
+        }
+        let (Some(start), Some(end)) = (seg.start_sec, seg.end_sec) else { continue };
+        // Pick the speaker whose segment overlaps this one the most.
+        let mut best_raw: Option<i32> = None;
+        let mut best_overlap = 0.0_f64;
+        for sp in speakers {
+            let ov = (end.min(sp.end as f64) - start.max(sp.start as f64)).max(0.0);
+            if ov > best_overlap {
+                best_overlap = ov;
+                best_raw = Some(sp.speaker);
+            }
+        }
+        if let Some(raw) = best_raw {
+            seg.source = format!("Speaker {}", display(raw));
+        }
+    }
 }
 
 /// Pick a non-colliding `<stem>.md` path in `dir`.
@@ -461,11 +547,13 @@ fn create_live_file(app: &AppHandle, started: SystemTime) -> Option<std::path::P
 /// visible in the UI so the user can copy it manually.
 fn save_transcript(app: &AppHandle) {
     let store = app.state::<TranscriptStore>();
-    let segments: Vec<StoredSegment> = match store.segments.lock() {
+    let mut segments: Vec<StoredSegment> = match store.segments.lock() {
         Ok(s) => s.clone(),
         Err(_) => return,
     };
     let live_path = store.live_path.lock().ok().and_then(|mut g| g.take());
+    // The recorded Them stream, consumed (and always deleted) by diarization.
+    let wav = them_session_wav_path(app);
 
     if segments.is_empty() {
         eprintln!("[AiBuddy] transcript save: store empty — nothing to write");
@@ -473,9 +561,33 @@ fn save_transcript(app: &AppHandle) {
         if let Some(p) = live_path {
             std::fs::remove_file(p).ok();
         }
+        if let Some(w) = &wav {
+            std::fs::remove_file(w).ok();
+        }
         app.emit("transcript-discarded", ()).ok();
         return;
     }
+
+    // Speaker diarization: relabel "them" segments as Speaker 1/2/3 from the
+    // recorded audio. Best-effort — failures leave the "Them" labels intact.
+    if let Some(w) = &wav {
+        if w.exists() {
+            let t0 = std::time::Instant::now();
+            match crate::diarization::diarize(app, w) {
+                Ok(speakers) => {
+                    eprintln!(
+                        "[AiBuddy] diarization: {} speaker-segment(s) in {:.1}s",
+                        speakers.len(),
+                        t0.elapsed().as_secs_f64()
+                    );
+                    apply_diarization(&mut segments, &speakers);
+                }
+                Err(e) => eprintln!("[AiBuddy] diarization failed: {e}"),
+            }
+            std::fs::remove_file(w).ok();
+        }
+    }
+
     eprintln!("[AiBuddy] transcript save: {} segment(s), generating subject…", segments.len());
     let session_start = store
         .session_start

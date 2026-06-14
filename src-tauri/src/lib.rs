@@ -1,6 +1,7 @@
 use tauri::{Emitter, Manager};
 
 mod accessibility;
+mod diarization;
 mod download;
 mod llm;
 mod memory;
@@ -299,6 +300,8 @@ pub fn run() {
             transcription::request_transcription_permission,
             speech_assets::speech_assets_status,
             speech_assets::install_speech_assets,
+            diarization::diarization_models_status,
+            diarization::install_diarization_models,
             open_speech_settings,
             transcription::is_transcribing,
             transcription::start_transcription,

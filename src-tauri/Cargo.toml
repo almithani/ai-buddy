@@ -25,6 +25,7 @@ futures-util = "0.3"
 tokio        = { version = "1", features = ["fs", "io-util"] }
 llama-cpp-2  = "0"
 chrono       = "0.4"
+sherpa-rs    = { version = "0.6.8", default-features = false, features = ["download-binaries"] }
 
 # core-foundation is a transitive dep of tauri on macOS, but accessibility.rs
 # imports it directly so it must be an explicit dependency.

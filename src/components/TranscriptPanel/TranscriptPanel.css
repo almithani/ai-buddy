@@ -140,6 +140,23 @@
   flex-shrink: 0;
 }
 
+/* ── Diarization download note ── */
+.tp-diar-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.tp-diar-note button {
+  margin-left: auto;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
 /* ── Status bar ── */
 .tp-statusbar {
   display: flex;
