@@ -29,6 +29,10 @@ interface Resource {
 
 let nextId = 1;
 
+// Shown when the user pastes substantial text or activates over a highlight.
+const SUMMARIZE_OR_EDIT_OFFER =
+  "I see your text — want me to **summarize** or **edit** it?";
+
 export default function ChatPanel() {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -50,6 +54,11 @@ export default function ChatPanel() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Inject a buddy message without invoking the LLM.
+  function injectBuddy(text: string) {
+    setMessages((m) => [...m, { id: nextId++, role: "buddy", text }]);
+  }
 
   // Generates a greeting via the LLM (respects stored preferences).
   // Falls back to a hardcoded string if the model isn't loaded yet.
@@ -229,7 +238,12 @@ export default function ChatPanel() {
       );
       setInput("");
       setBusy(false);
-      await streamGreeting("Greet the user briefly and let them know you're ready to help.");
+      if (text) {
+        // Highlighted text captured → offer summarize/edit (instant, no LLM).
+        injectBuddy(SUMMARIZE_OR_EDIT_OFFER);
+      } else {
+        await streamGreeting("Greet the user briefly and let them know you're ready to help.");
+      }
       setTimeout(() => inputRef.current?.focus(), 50);
     });
     return () => { unlisten.then((fn) => fn()); };
@@ -379,6 +393,20 @@ export default function ChatPanel() {
       e.preventDefault();
       handleSend();
     }
+  }
+
+  // Substantial pasted text → capture as a resource and offer summarize/edit,
+  // instead of dumping a wall of text into the input. Short pastes fall through.
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const pasted = e.clipboardData.getData("text");
+    const substantial = pasted.trim().length > 200 || pasted.split("\n").length > 2;
+    if (!substantial) return; // normal paste into the textarea
+
+    e.preventDefault();
+    const label = pasted.trim().slice(0, 50) + (pasted.trim().length > 50 ? "…" : "");
+    setResources((r) => [...r, { id: nextId++, type: "text", label, content: pasted }]);
+    injectBuddy(SUMMARIZE_OR_EDIT_OFFER);
+    setTimeout(() => inputRef.current?.focus(), 50);
   }
 
   // Tauri intercepts OS file drops before the browser sees them, so
@@ -567,6 +595,7 @@ export default function ChatPanel() {
           disabled={busy}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
         />
         <button
           className="chat-send-btn"

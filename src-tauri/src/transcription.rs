@@ -142,7 +142,7 @@ fn update_live_file(app: &AppHandle) {
         .and_then(|g| *g)
         .unwrap_or_else(SystemTime::now)
         .into();
-    let md = render_markdown("Meeting in progress", started, &segments);
+    let md = render_markdown("Meeting in progress", None, started, &segments);
     if let Err(e) = std::fs::write(&path, md) {
         eprintln!("[AiBuddy] live notes write failed ({}): {e}", path.display());
     }
@@ -405,6 +405,37 @@ fn generate_subject(app: &AppHandle, segments: &[StoredSegment]) -> String {
     }
 }
 
+/// Bulleted meeting summary (Key Points / Decisions / Action Items). Returns ""
+/// on error or empty input — the caller then omits the summary body.
+fn generate_summary(app: &AppHandle, segments: &[StoredSegment]) -> String {
+    // Speaker-labeled transcript so the model can attribute decisions/actions.
+    let transcript: String = fold_turns(segments)
+        .into_iter()
+        .map(|(source, _ts, text)| {
+            let label = match source.as_str() {
+                "me" => "Me",
+                "them" => "Them",
+                other => other,
+            };
+            format!("{label}: {text}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if transcript.trim().is_empty() {
+        return String::new();
+    }
+
+    let prompt = format!(
+        "You are summarizing a meeting transcript into concise minutes. \
+         Write short markdown bullet points under exactly these three headings \
+         (omit a heading only if it has nothing):\n\
+         **Key Points**\n**Decisions**\n**Action Items**\n\n\
+         Be specific and factual. Do not invent content.\n\nTranscript:\n{transcript}"
+    );
+    let llm = app.state::<crate::llm::LlmState>();
+    crate::llm::generate_text(&llm, &prompt, 400).unwrap_or_default()
+}
+
 fn expand_home(raw: &str) -> std::path::PathBuf {
     if let Some(rest) = raw.strip_prefix("~/") {
         if let Some(home) = std::env::var_os("HOME") {
@@ -428,9 +459,12 @@ fn transcript_save_dir(app: &AppHandle) -> std::path::PathBuf {
     expand_home(&configured.unwrap_or_else(|| DEFAULT_TRANSCRIPT_DIR.to_string()))
 }
 
-/// Shared renderer for the live file and the final save.
+/// Shared renderer for the live file and the final save. `summary` is the
+/// AI-generated meeting summary (None during the live session — shows a
+/// placeholder; Some at save time).
 fn render_markdown(
     subject: &str,
+    summary: Option<&str>,
     started: chrono::DateTime<chrono::Local>,
     segments: &[StoredSegment],
 ) -> String {
@@ -439,6 +473,17 @@ fn render_markdown(
         subject,
         started.format("%Y-%m-%d %-I:%M %p")
     );
+
+    md.push_str("## AI-Generated Summary\n\n");
+    match summary {
+        Some(s) if !s.trim().is_empty() => {
+            md.push_str(s.trim());
+            md.push_str("\n\n");
+        }
+        _ => md.push_str("_Generated when the session ends._\n\n"),
+    }
+
+    md.push_str("## Transcript\n\n");
     for (source, ts_ms, text) in fold_turns(segments) {
         // After diarization, `source` is already a speaker label (e.g. "Speaker 1").
         let label = match source.as_str() {
@@ -522,7 +567,7 @@ fn create_live_file(app: &AppHandle, started: SystemTime) -> Option<std::path::P
     // The live name always carries the time for uniqueness; the FINAL name
     // honors the include-time setting at save.
     let stem = format!("{} - Meeting in progress", started.format("%Y-%m-%d %H%M"));
-    let md = render_markdown("Meeting in progress", started, &[]);
+    let md = render_markdown("Meeting in progress", None, started, &[]);
 
     let dir = transcript_save_dir(app);
     match write_transcript(&dir, &stem, &md) {
@@ -599,6 +644,9 @@ fn save_transcript(app: &AppHandle) {
     let subject = generate_subject(app, &segments);
     eprintln!("[AiBuddy] transcript save: subject = {subject:?}");
 
+    let summary = generate_summary(app, &segments);
+    eprintln!("[AiBuddy] transcript save: summary = {} chars", summary.len());
+
     let include_time = {
         let db = app.state::<crate::memory::DbState>();
         db.0.lock()
@@ -615,7 +663,8 @@ fn save_transcript(app: &AppHandle) {
         format!("{} - {}", started.format("%Y-%m-%d"), subject)
     };
 
-    let md = render_markdown(&subject, started, &segments);
+    let summary_opt = (!summary.trim().is_empty()).then_some(summary.as_str());
+    let md = render_markdown(&subject, summary_opt, started, &segments);
 
     // Preferred path: finalize the live file in place (write real subject,
     // rename to the real name). Falls back to a fresh write if there is no

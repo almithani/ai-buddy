@@ -159,6 +159,127 @@ pub fn generate_short_text(
     Ok(out)
 }
 
+/// Synchronous, non-streaming, MULTI-LINE completion for internal use (e.g.
+/// summaries). Like `generate_short_text` but does not stop at newlines, uses a
+/// 4096 context, and truncates over-long input to fit. Holds the model lock for
+/// the duration. Does NOT emit llm-token events.
+pub fn generate_text(
+    state: &LlmState,
+    prompt_text: &str,
+    max_new: u32,
+) -> Result<String, String> {
+    const N_CTX: usize = 4096;
+    let backend = BACKEND.get().ok_or("LLM backend not initialised")?;
+
+    let guard = state.0.lock().map_err(|e| e.to_string())?;
+    let model = guard.as_ref().ok_or("Model not loaded")?;
+
+    // Truncate over-long input (rough char cap) so the prompt + output fit N_CTX.
+    const MAX_INPUT_CHARS: usize = 12_000;
+    let prompt_text = if prompt_text.len() > MAX_INPUT_CHARS {
+        let cut = (0..=MAX_INPUT_CHARS)
+            .rev()
+            .find(|&i| prompt_text.is_char_boundary(i))
+            .unwrap_or(0);
+        &prompt_text[..cut]
+    } else {
+        prompt_text
+    };
+
+    let messages = [ChatMessage { role: "user".into(), content: prompt_text.into() }];
+    let prompt = format_prompt("", &messages);
+
+    let mut tokens: Vec<_> = model
+        .str_to_token(&prompt, AddBos::Always)
+        .map_err(|e| format!("Tokenisation failed: {e}"))?;
+
+    // Hard token-level guard: keep the tail if still too long for the window.
+    let budget = N_CTX.saturating_sub(max_new as usize + 8);
+    if tokens.len() > budget {
+        let start = tokens.len() - budget;
+        tokens = tokens[start..].to_vec();
+    }
+
+    let ctx_params = LlamaContextParams::default()
+        .with_n_ctx(Some(NonZeroU32::new(N_CTX as u32).unwrap()))
+        // n_batch must cover the whole prompt in one decode (default 2048 is
+        // smaller than n_ctx, which asserts on long prompts).
+        .with_n_batch(N_CTX as u32)
+        .with_n_threads(
+            std::thread::available_parallelism()
+                .map(|n| n.get() as i32)
+                .unwrap_or(4),
+        );
+
+    let mut ctx = model
+        .new_context(backend, ctx_params)
+        .map_err(|e| format!("Context creation failed: {e}"))?;
+
+    let mut batch = LlamaBatch::new(tokens.len(), 1);
+    let last_idx = (tokens.len() as i32) - 1;
+    for (i, &tok) in tokens.iter().enumerate() {
+        batch.add(tok, i as i32, &[0], i as i32 == last_idx)
+            .map_err(|e| format!("Batch add failed: {e}"))?;
+    }
+    ctx.decode(&mut batch).map_err(|e| format!("Initial decode failed: {e}"))?;
+
+    let mut sampler = LlamaSampler::chain_simple([
+        LlamaSampler::temp(0.4),
+        LlamaSampler::dist(42),
+    ]);
+
+    let mut out = String::new();
+    let mut n_pos = tokens.len() as i32;
+    for _ in 0..max_new {
+        let new_token = sampler.sample(&ctx, -1);
+        sampler.accept(new_token);
+        if model.is_eog_token(new_token) {
+            break;
+        }
+        #[allow(deprecated)]
+        let piece = model.token_to_str(new_token, Special::Tokenize).unwrap_or_default();
+        out.push_str(&piece);
+        // Stop at a turn boundary, but NOT at newlines (summaries are multi-line).
+        if let Some(pos) = ["<end_of_turn>", "<start_of_turn>"]
+            .iter()
+            .filter_map(|s| out.find(s))
+            .min()
+        {
+            out.truncate(pos);
+            break;
+        }
+        batch.clear();
+        batch.add(new_token, n_pos, &[0], true)
+            .map_err(|e| format!("Token batch add failed: {e}"))?;
+        ctx.decode(&mut batch).map_err(|e| format!("Token decode failed: {e}"))?;
+        n_pos += 1;
+    }
+
+    Ok(out.trim().to_string())
+}
+
+/// Summarize arbitrary text (frontend / future image-PDF entry point).
+#[tauri::command]
+pub async fn summarize_text(
+    state: tauri::State<'_, LlmState>,
+    text: String,
+) -> Result<String, String> {
+    // Move the model pointer across the spawn_blocking boundary; the model is
+    // pinned in managed state for the process lifetime.
+    let prompt = format!(
+        "Summarize the following text concisely, capturing the key points. \
+         Use short markdown bullet points.\n\nText:\n{text}"
+    );
+    let state_ptr = &*state as *const LlmState as usize;
+    tauri::async_runtime::spawn_blocking(move || {
+        // Safety: LlmState is Tauri managed state and outlives this task.
+        let state = unsafe { &*(state_ptr as *const LlmState) };
+        generate_text(state, &prompt, 320)
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {e}"))?
+}
+
 #[tauri::command]
 pub async fn generate_response(
     app: tauri::AppHandle,
@@ -196,6 +317,10 @@ pub async fn generate_response(
 
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(NonZeroU32::new(4096).unwrap()))
+            // n_batch must cover the whole prompt in one decode (default 2048 is
+            // smaller than n_ctx, which asserts on long prompts — e.g. a pasted
+            // article fed in as chat context).
+            .with_n_batch(4096)
             .with_n_threads(
                 std::thread::available_parallelism()
                     .map(|n| n.get() as i32)

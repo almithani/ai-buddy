@@ -295,6 +295,7 @@ pub fn run() {
             llm::load_model,
             llm::is_model_loaded,
             llm::generate_response,
+            llm::summarize_text,
             // Transcription
             transcription::transcription_auth_status,
             transcription::request_transcription_permission,
