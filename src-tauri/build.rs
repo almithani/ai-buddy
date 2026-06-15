@@ -15,6 +15,12 @@ fn main() {
             .compile("aibuddy_capture");
 
         build_swift_speech_engine();
+
+        // sherpa-onnx + onnxruntime dylibs are bundled into Contents/Frameworks
+        // (see tauri.conf.json bundle.macOS.frameworks). They're referenced via
+        // @rpath, so the executable needs an rpath pointing there. Dev runs work
+        // via cargo's injected dylib path; this rpath is for the bundled .app.
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
     }
 }
 

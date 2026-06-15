@@ -321,6 +321,19 @@ pub fn run() {
             // Files
             read_file,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // On macOS the Swift SpeechAnalyzer engine (statically linked) owns
+            // concurrency objects (actors + Tasks) in process-global state. If
+            // those are torn down inside `exit()` → `__cxa_finalize_ranges`,
+            // the Swift runtime aborts (SIGABRT) — a scary crash dialog on quit
+            // after a transcription session. Nothing critical runs at exit
+            // (SQLite autocommits; transcripts are written synchronously), so
+            // bypass the finalizers with _exit once Tauri has cleaned up.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Exit = event {
+                unsafe { libc::_exit(0) };
+            }
+        });
 }
