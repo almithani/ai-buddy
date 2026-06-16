@@ -226,6 +226,19 @@ mod mac {
         unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) }
     }
 
+    /// Show macOS's own Accessibility prompt (the closest thing to an "Allow"
+    /// dialog — Accessibility has no one-click grant; it deep-links to Settings).
+    /// Returns the current trust state. No-op prompt if already trusted.
+    pub fn prompt_for_trust() -> bool {
+        use core_foundation::boolean::CFBoolean;
+        use core_foundation::dictionary::CFDictionary;
+        // kAXTrustedCheckOptionPrompt's value is the string "AXTrustedCheckOptionPrompt".
+        let key = CFString::from_static_string("AXTrustedCheckOptionPrompt");
+        let value = CFBoolean::true_value();
+        let options = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), value.as_CFType())]);
+        unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const c_void) }
+    }
+
     /// Tries AXSelectedText; falls back to clipboard ⌘C if the AX read fails
     /// or returns empty. Returns (text, diagnostic_log).
     pub fn get_selected_text_debug(prev_pid: Option<i32>) -> (Option<String>, String) {
@@ -332,6 +345,15 @@ pub fn capture_selected_text_debug(state: &PrevApp) -> (String, String) {
 pub fn check_accessibility_permission() -> bool {
     #[cfg(target_os = "macos")]
     return mac::is_trusted();
+    #[cfg(not(target_os = "macos"))]
+    return true;
+}
+
+/// Show macOS's Accessibility permission prompt. Returns current trust state.
+#[tauri::command]
+pub fn prompt_accessibility_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    return mac::prompt_for_trust();
     #[cfg(not(target_os = "macos"))]
     return true;
 }

@@ -103,6 +103,39 @@ fn request_accessibility_permission() {
     }
 }
 
+/// Relaunch the app. Accessibility grants only take effect for a freshly
+/// launched process, so onboarding offers this to finish setup.
+///
+/// We do NOT use `app.restart()`: it calls `std::process::exit()`, which runs
+/// the C++/Swift static destructors that abort (the same `__cxa_finalize_ranges`
+/// path we bypass on normal quit). Instead we spawn the new instance ourselves
+/// and `_exit(0)` to skip the finalizers. The spawned child reparents to launchd
+/// and survives.
+#[tauri::command]
+fn restart_app(_app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let exe = std::env::current_exe().ok();
+        // Bundled: .../AI Buddy.app/Contents/MacOS/aibuddy → relaunch the .app
+        // via LaunchServices (proper activation, forces a fresh instance).
+        let bundle = exe
+            .as_ref()
+            .and_then(|p| p.ancestors().nth(3))
+            .filter(|p| p.extension().map_or(false, |e| e == "app"));
+        if let Some(bundle) = bundle {
+            let _ = std::process::Command::new("open").arg("-n").arg(bundle).spawn();
+        } else if let Some(exe) = exe {
+            // Dev binary (not in a .app): spawn it directly.
+            let _ = std::process::Command::new(exe).spawn();
+        }
+        unsafe { libc::_exit(0) };
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        _app.restart();
+    }
+}
+
 #[tauri::command]
 fn reveal_in_finder(path: String) {
     #[cfg(target_os = "macos")]
@@ -318,7 +351,9 @@ pub fn run() {
             memory::delete_memory,
             // Accessibility
             accessibility::check_accessibility_permission,
+            accessibility::prompt_accessibility_permission,
             accessibility::replace_selected_text,
+            restart_app,
             // Files
             read_file,
         ])
