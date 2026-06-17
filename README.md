@@ -22,6 +22,8 @@ On first launch the onboarding flow walks you through granting Accessibility per
 ## Building a release
 
 ```sh
+npm run release        # bump the patch version, then build
+# or, without bumping the version:
 npm run tauri build
 ```
 
@@ -32,6 +34,27 @@ Output is in `src-tauri/target/release/bundle/`:
 | macOS    | `.dmg`, `.app` |
 | Windows  | `.msi`, `.exe` |
 | Linux    | `.deb`, `.AppImage` |
+
+### Versioning
+
+`npm run release` increments the version and then builds:
+
+```sh
+npm run release          # patch:  0.1.0 → 0.1.1
+npm run release:minor    # minor:  0.1.0 → 0.2.0
+npm run release:major    # major:  0.1.0 → 1.0.0
+
+npm run bump [patch|minor|major]   # bump only, no build (default: patch)
+```
+
+The bump (`scripts/bump-version.mjs`) keeps the version in sync across the three
+sources: `src-tauri/tauri.conf.json` (the version Tauri stamps into the bundle),
+`package.json`, and `src-tauri/Cargo.toml`.
+
+Plain `npm run tauri build` does **not** bump the version — use it for throwaway
+test builds. (Bumping is a pre-build step rather than a `beforeBuildCommand`
+hook because Tauri reads the version from `tauri.conf.json` when the build
+starts, so an in-build bump would only apply to the *next* build.)
 
 ### Bundling the model
 
