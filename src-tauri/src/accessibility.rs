@@ -43,6 +43,7 @@ mod mac {
 
     const KCG_HID_EVENT_TAP: u32 = 0;
     const KVK_ANSI_C: CGKeyCode = 0x08;
+    const KVK_ANSI_V: CGKeyCode = 0x09;
     const KCG_EVENT_FLAG_MASK_COMMAND: CGEventFlags = 0x0010_0000;
 
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -54,6 +55,9 @@ mod mac {
         ) -> CGEventRef;
         fn CGEventSetFlags(event: CGEventRef, flags: CGEventFlags);
         fn CGEventPost(tap: u32, event: CGEventRef);
+        /// Deliver an event straight to a specific process (no app activation,
+        /// no focus change) — used to paste into a background browser.
+        fn CGEventPostToPid(pid: i32, event: CGEventRef);
     }
 
     // ── Objective-C runtime ──────────────────────────────────────────────────
@@ -78,6 +82,8 @@ mod mac {
         #[link_name = "objc_msgSend"] fn msg_id_cstr   (r: ObjcId, s: Sel, a: *const std::ffi::c_char) -> ObjcId;
         #[link_name = "objc_msgSend"] fn msg_i64_id_id (r: ObjcId, s: Sel, a: ObjcId, b: ObjcId) -> i64;
         #[link_name = "objc_msgSend"] fn msg_i32_id_id (r: ObjcId, s: Sel, a: ObjcId, b: ObjcId) -> i32;
+        #[link_name = "objc_msgSend"] fn msg_id_i32    (r: ObjcId, s: Sel, a: i32) -> ObjcId;
+        #[link_name = "objc_msgSend"] fn msg_void_u64  (r: ObjcId, s: Sel, a: u64);
     }
 
     macro_rules! sel {
@@ -163,6 +169,58 @@ mod mac {
                 CFRelease(ev as *const c_void);
             }
         }
+    }
+
+    /// Send ⌘V directly to a specific process (so it lands in the target app
+    /// even though our chat window currently has focus).
+    fn post_cmd_v_to_pid(pid: i32) {
+        unsafe {
+            for key_down in [true, false] {
+                let ev = CGEventCreateKeyboardEvent(std::ptr::null_mut(), KVK_ANSI_V, key_down);
+                CGEventSetFlags(ev, KCG_EVENT_FLAG_MASK_COMMAND);
+                CGEventPostToPid(pid, ev);
+                CFRelease(ev as *const c_void);
+            }
+        }
+    }
+
+    /// Bring the app with `pid` to the front (NSRunningApplication) so it
+    /// reliably processes the synthetic paste into its focused field.
+    fn activate_app(pid: i32) {
+        unsafe {
+            let app = msg_id_i32(
+                cls!("NSRunningApplication"),
+                sel!("runningApplicationWithProcessIdentifier:"),
+                pid,
+            );
+            if app.is_null() {
+                return;
+            }
+            // NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2.
+            msg_void_u64(app, sel!("activateWithOptions:"), 2);
+        }
+    }
+
+    /// Replace the target app's current selection by pasting `text`. Used when
+    /// the AX write is rejected — common for browser/web text fields (Gmail in
+    /// Chrome), which are user-editable but don't honor AXSelectedText writes.
+    /// Saves and restores the clipboard around the paste.
+    fn paste_replace(text: &str, prev_pid: Option<i32>) -> Result<(), String> {
+        let pid = prev_pid.ok_or("No target app to paste into")?;
+
+        let original = clipboard_get();
+        clipboard_set(text);
+        // Bring the target forward and let activation + clipboard settle.
+        activate_app(pid);
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        post_cmd_v_to_pid(pid);
+        // Wait for the target app to consume the clipboard before restoring it,
+        // otherwise the restore could race the paste.
+        std::thread::sleep(std::time::Duration::from_millis(350));
+        if let Some(t) = original {
+            clipboard_set(&t);
+        }
+        Ok(())
     }
 
     /// Clipboard fallback for apps (e.g. Firefox) that don't expose AXSelectedText.
@@ -288,16 +346,20 @@ mod mac {
 
     pub fn replace_selected_text_impl(text: &str, prev_pid: Option<i32>) -> Result<(), String> {
         unsafe {
-            let el = focused_element(prev_pid).ok_or("No focused element")?;
-            let attr = cf_str("AXSelectedText");
-            let value = cf_str(text);
-            let err = AXUIElementSetAttributeValue(el, attr.as_concrete_TypeRef(), value.as_CFTypeRef());
-            CFRelease(el as *const c_void);
-            if err == AX_SUCCESS {
-                Ok(())
-            } else {
-                Err("The text field is read-only and cannot be edited.".to_string())
+            // 1. Clean AX write — works for native fields (Mail, TextEdit, …).
+            if let Some(el) = focused_element(prev_pid) {
+                let attr = cf_str("AXSelectedText");
+                let value = cf_str(text);
+                let err =
+                    AXUIElementSetAttributeValue(el, attr.as_concrete_TypeRef(), value.as_CFTypeRef());
+                CFRelease(el as *const c_void);
+                if err == AX_SUCCESS {
+                    return Ok(());
+                }
             }
+            // 2. AX unavailable/rejected — the field is usually still editable
+            //    (browser/web inputs like Gmail), so paste over the selection.
+            paste_replace(text, prev_pid)
         }
     }
 }
