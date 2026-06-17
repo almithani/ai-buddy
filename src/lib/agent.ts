@@ -30,17 +30,25 @@ You have access to the following tools. Use them by outputting a JSON block like
 <tool_call>{"name": "tool_name", "args": {"key": "value"}}</tool_call>
 
 Available tools:
-- replace_selected_text      — Replace the user's selected text. Args: {"text": "..."}
 - read_file                  — Read a file the user dropped. Args: {"path": "..."}
 - store_preference           — Save a user preference for future tasks. Args: {"rule": "..."}
 - get_memory                 — List everything you remember about the user (preferences and settings)
 - set_transcript_settings    — Change where meeting transcripts are auto-saved or their filename format. Args (each optional): {"directory": "~/Desktop", "include_time": "true" or "false"}. Use when the user asks to change where transcripts/meeting minutes are stored, or to include/omit the time in transcript filenames.
 
+Editing the user's selected text:
+- To replace it in place, output the COMPLETE edited text between <replace> and </replace> tags.
+- Write real line breaks and keep the original paragraph structure — preserve every blank line. Do NOT collapse paragraphs onto one line, and do NOT wrap the text in JSON or quotes.
+- Example:
+<replace>
+First paragraph.
+
+Second paragraph.
+</replace>
+
 Rules:
 - The user's selected text is shown in the conversation above — use it as the input for edits.
-- If the user asks to summarize attached/selected/pasted text, write the summary directly in your reply as concise markdown bullet points. Do not use a tool for summarizing.
+- If the user asks to summarize attached/selected/pasted text, write the summary directly in your reply as concise markdown bullet points.
 - After editing, confirm briefly in plain language. No markdown.
-- If replace_selected_text returns an error, the field is read-only. Output the edited text directly in your reply instead, and tell the user they can copy it.
 - If a file attachment contains "[Image file", respond only with: "Image input is not supported yet." Do not attempt to read or describe the image.
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
@@ -132,6 +140,16 @@ function parseToolCall(text: string): ToolCall | null {
   }
 }
 
+// In-place edit: the replacement text is raw (not JSON) so line breaks and
+// paragraphs survive verbatim. Strips one leading/trailing newline the model
+// tends to add for readability, keeping all internal structure.
+function parseEditBlock(text: string): ToolCall | null {
+  const match = text.match(/<replace>([\s\S]*?)<\/replace>/);
+  if (!match) return null;
+  const inner = match[1].replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+  return { name: "replace_selected_text", args: { text: inner } };
+}
+
 // ── Main agent loop ───────────────────────────────────────────────────────────
 
 export async function runAgent(
@@ -155,18 +173,26 @@ export async function runAgent(
     { role: "user", content: finalUserMessage },
   ];
 
-  // Strip <tool_call> blocks (complete or in-progress) from the display text.
-  // Also holds back any trailing chars that could be the start of <tool_call>
-  // so partial tags never flash on screen.
+  // Strip <tool_call> and <replace> blocks (complete or in-progress) from the
+  // display text. Also holds back any trailing chars that could be the start of
+  // one of those tags so partial tags never flash on screen.
+  const HIDDEN_TAGS = ["<tool_call>", "<replace>"] as const;
   function visibleText(buf: string): string {
-    let text = buf.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "");
-    const idx = text.indexOf("<tool_call>");
-    if (idx >= 0) text = text.slice(0, idx);
-    const tag = "<tool_call>";
-    for (let len = Math.min(tag.length - 1, text.length); len > 0; len--) {
-      if (tag.startsWith(text.slice(-len))) {
-        text = text.slice(0, -len);
-        break;
+    let text = buf
+      .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "")
+      .replace(/<replace>[\s\S]*?<\/replace>/g, "");
+    // An unclosed block is still streaming — hide from its opening tag onward.
+    for (const tag of HIDDEN_TAGS) {
+      const idx = text.indexOf(tag);
+      if (idx >= 0) text = text.slice(0, idx);
+    }
+    // Hold back a trailing partial opening tag (e.g. "<rep").
+    for (const tag of HIDDEN_TAGS) {
+      for (let len = Math.min(tag.length - 1, text.length); len > 0; len--) {
+        if (tag.startsWith(text.slice(-len))) {
+          text = text.slice(0, -len);
+          break;
+        }
       }
     }
     return text;
@@ -205,7 +231,8 @@ export async function runAgent(
     });
     await tokenDone;
 
-    const toolCall = parseToolCall(buffer);
+    // Prefer the raw-text edit block (preserves line breaks) over a JSON tool.
+    const toolCall = parseEditBlock(buffer) ?? parseToolCall(buffer);
 
     if (!toolCall) {
       // No tool call — final answer
