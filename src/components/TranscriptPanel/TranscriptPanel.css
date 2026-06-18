@@ -183,6 +183,21 @@
   50% { opacity: 0.35; }
 }
 
+/* Small spinner shown while the transcript is being finalized (diarize/summary). */
+.tp-status-spinner {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: tp-spin 0.7s linear infinite;
+}
+
+@keyframes tp-spin {
+  to { transform: rotate(360deg); }
+}
+
 .tp-status-link {
   color: var(--accent);
   cursor: pointer;

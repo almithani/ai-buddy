@@ -744,3 +744,21 @@ void aibuddy_speech_stop(void) {
         aibuddy_teardown();
     }
 }
+
+// ── App Nap suppression for background processing ──────────────────────────
+// The transcript save (diarization + LLM passes) runs on a background thread.
+// When the app isn't frontmost, macOS App Nap throttles it badly (the work can
+// crawl for an hour). Hold an NSProcessInfo activity assertion for the duration.
+
+void* aibuddy_begin_processing_activity(void) {
+    id<NSObject> token = [[NSProcessInfo processInfo]
+        beginActivityWithOptions:NSActivityUserInitiated
+                          reason:@"Saving transcript"];
+    return (void*)CFBridgingRetain(token);
+}
+
+void aibuddy_end_processing_activity(void* token) {
+    if (!token) return;
+    id<NSObject> t = CFBridgingRelease(token);
+    [[NSProcessInfo processInfo] endActivity:t];
+}

@@ -178,6 +178,7 @@ export default function ChatPanel() {
 
   // Transcription lifecycle → buddy messages (no LLM call). ChatPanel never
   // unmounts while the window lives, so these listeners persist across tabs.
+  const processingNotedRef = useRef(false);
   useEffect(() => {
     function injectBuddyMessage(text: string) {
       setMessages((m) => [...m, { id: nextId++, role: "buddy", text }]);
@@ -196,6 +197,14 @@ export default function ChatPanel() {
     });
     const unlistenStopped = listen("transcription-stopped", () => {
       injectBuddyMessage("I've stopped recording.");
+      processingNotedRef.current = false; // arm the one-time "working on it" line
+    });
+    // First progress event of a session → one heads-up line (the rest of the
+    // per-stage detail lives in the Transcript tab's status bar).
+    const unlistenProgress = listen("transcript-progress", () => {
+      if (processingNotedRef.current) return;
+      processingNotedRef.current = true;
+      injectBuddyMessage("Writing up your meeting notes — identifying speakers and summarizing… 📝");
     });
     const unlistenSaved = listen<string>("transcript-saved", (event) => {
       const path = event.payload;
@@ -219,6 +228,7 @@ export default function ChatPanel() {
     return () => {
       unlistenStarted.then((fn) => fn());
       unlistenStopped.then((fn) => fn());
+      unlistenProgress.then((fn) => fn());
       unlistenSaved.then((fn) => fn());
       unlistenSaveFailed.then((fn) => fn());
       unlistenWarning.then((fn) => fn());

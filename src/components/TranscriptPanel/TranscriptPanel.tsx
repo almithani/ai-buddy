@@ -71,6 +71,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
   const [livePath, setLivePath] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
   const [diarStatus, setDiarStatus] = useState<"unknown" | "missing" | "installed" | "downloading">("unknown");
   const [diarProgress, setDiarProgress] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -144,17 +145,25 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
     const unlistenStarted = listen<string>("transcription-started", (event) => {
       setLivePath(event.payload || null);
       setSaveFailed(false);
+      setStage(null);
     });
     const unlistenSaved = listen<string>("transcript-saved", (event) => {
       setSavedPath(event.payload);
       setLivePath(null);
+      setStage(null);
     });
     const unlistenSaveFailed = listen<string>("transcript-save-failed", () => {
       // The live file still exists on disk — keep linking to it for recovery.
       setSaveFailed(true);
+      setStage(null);
     });
     const unlistenDiscarded = listen("transcript-discarded", () => {
       setLivePath(null); // empty session: live file was deleted
+      setStage(null);
+    });
+    // Per-stage progress during the post-Stop save (diarization, summary…).
+    const unlistenProgress = listen<string>("transcript-progress", (event) => {
+      setStage(event.payload);
     });
 
     // Speaker-diarization model availability (offer download if missing).
@@ -182,6 +191,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       unlistenSaved.then((fn) => fn());
       unlistenSaveFailed.then((fn) => fn());
       unlistenDiscarded.then((fn) => fn());
+      unlistenProgress.then((fn) => fn());
       unlistenDiar.then((fn) => fn());
     };
   }, []);
@@ -306,6 +316,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       {livePath ? (
         <div className="tp-statusbar">
           {transcribing && <span className="tp-status-dot" />}
+          {!transcribing && !saveFailed && <span className="tp-status-spinner" />}
           <a
             className="tp-status-link"
             title={livePath}
@@ -320,7 +331,7 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
                 : "saved"
               : saveFailed
                 ? "save failed — file kept"
-                : "finalizing…"}
+                : stage ?? "finalizing…"}
           </span>
         </div>
       ) : savedPath ? (

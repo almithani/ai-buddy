@@ -183,6 +183,26 @@ pub struct SpeakerSegment {
     pub speaker: i32,
 }
 
+/// Linear-interpolation resample of mono f32 audio to 16 kHz. Good enough for
+/// speaker embeddings; avoids pulling in a resampling dependency.
+fn resample_to_16k(samples: &[f32], from_rate: u32) -> Vec<f32> {
+    if from_rate == 16000 || samples.is_empty() {
+        return samples.to_vec();
+    }
+    let ratio = 16000.0 / from_rate as f64;
+    let out_len = ((samples.len() as f64) * ratio).floor() as usize;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let src = i as f64 / ratio;
+        let idx = src.floor() as usize;
+        let frac = (src - idx as f64) as f32;
+        let a = samples[idx];
+        let b = if idx + 1 < samples.len() { samples[idx + 1] } else { a };
+        out.push(a + (b - a) * frac);
+    }
+    out
+}
+
 /// Run diarization over a recorded WAV. Returns speaker segments sorted by
 /// start time. `num_speakers` < 1 → auto-detect via clustering threshold.
 pub fn diarize(
@@ -192,20 +212,25 @@ pub fn diarize(
     let seg = seg_path(app).ok_or("no seg model path")?;
     let emb = emb_path(app).ok_or("no emb model path")?;
 
-    let (samples, sample_rate) =
+    let (mut samples, sample_rate) =
         sherpa_rs::read_audio_file(wav.to_str().ok_or("bad wav path")?).map_err(|e| e.to_string())?;
-    if sample_rate != 16000 {
-        eprintln!(
-            "[AiBuddy] diarization: wav is {sample_rate} Hz (expected 16000) — results may degrade"
-        );
-    }
     if samples.is_empty() {
         return Ok(Vec::new());
     }
 
+    // The pyannote/CAM++ models expect 16 kHz. The recorded WAV is at the
+    // SpeechAnalyzer format (often 48 kHz) — feeding that in is both slow and
+    // wildly inaccurate (it over-segments one person into many "speakers"), so
+    // resample to 16 kHz first.
+    if sample_rate != 16000 {
+        eprintln!("[AiBuddy] diarization: resampling {sample_rate} Hz → 16000 Hz");
+        samples = resample_to_16k(&samples, sample_rate);
+    }
+
     let config = sherpa_rs::diarize::DiarizeConfig {
         num_clusters: Some(-1), // auto-detect speaker count via threshold
-        threshold: Some(0.5),
+        // Higher threshold = merge more aggressively = fewer phantom speakers.
+        threshold: Some(0.7),
         ..Default::default()
     };
     let mut sd = sherpa_rs::diarize::Diarize::new(&seg, &emb, config).map_err(|e| e.to_string())?;

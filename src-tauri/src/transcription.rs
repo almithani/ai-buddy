@@ -58,6 +58,37 @@ extern "C" {
         record_wav_path: *const c_char,
     ) -> i32;
     fn aibuddy_speech_stop();
+    fn aibuddy_begin_processing_activity() -> *mut c_void;
+    fn aibuddy_end_processing_activity(token: *mut c_void);
+}
+
+/// Holds an NSProcessInfo activity assertion so macOS App Nap doesn't throttle
+/// the background transcript save when the app isn't frontmost. No-op off macOS.
+struct ActivityGuard {
+    #[cfg(target_os = "macos")]
+    token: *mut c_void,
+}
+
+impl ActivityGuard {
+    fn begin() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            ActivityGuard { token: unsafe { aibuddy_begin_processing_activity() } }
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            ActivityGuard {}
+        }
+    }
+}
+
+impl Drop for ActivityGuard {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        unsafe {
+            aibuddy_end_processing_activity(self.token);
+        }
+    }
 }
 
 /// Fired by the ObjC speech lanes on arbitrary dispatch queues.
@@ -501,10 +532,30 @@ fn render_markdown(
 /// Replace the "them" source of each segment with a "Speaker N" label by
 /// intersecting its audio time range against diarization segments. Segments
 /// without a time range, or with no overlap, keep "them". "me" is untouched.
+/// More distinct speakers than this in one session = the diarization run is
+/// untrustworthy (e.g. over-segmentation), so we keep plain "Them".
+const MAX_TRUSTED_SPEAKERS: usize = 10;
+
 fn apply_diarization(segments: &mut [StoredSegment], speakers: &[crate::diarization::SpeakerSegment]) {
     if speakers.is_empty() {
         return;
     }
+    // Sanity check: an absurd speaker count means the result is garbage —
+    // keep "Them" rather than labelling everyone Speaker 1…57.
+    let distinct = {
+        let mut ids: Vec<i32> = speakers.iter().map(|s| s.speaker).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.len()
+    };
+    if distinct > MAX_TRUSTED_SPEAKERS {
+        eprintln!(
+            "[AiBuddy] diarization: {distinct} speakers detected (> {MAX_TRUSTED_SPEAKERS}) — \
+             discarding as unreliable, keeping \"Them\""
+        );
+        return;
+    }
+
     // Map raw speaker index → 1-based display number in first-appearance order.
     let mut order: Vec<i32> = Vec::new();
     let mut display = |raw: i32| -> usize {
@@ -591,6 +642,10 @@ fn create_live_file(app: &AppHandle, started: SystemTime) -> Option<std::path::P
 /// On failure the transcript store is left untouched — the transcript stays
 /// visible in the UI so the user can copy it manually.
 fn save_transcript(app: &AppHandle) {
+    // Keep this heavy work (diarization + LLM passes) running at full speed even
+    // when the app is backgrounded — released on every return path.
+    let _activity = ActivityGuard::begin();
+
     let store = app.state::<TranscriptStore>();
     let mut segments: Vec<StoredSegment> = match store.segments.lock() {
         Ok(s) => s.clone(),
@@ -617,6 +672,7 @@ fn save_transcript(app: &AppHandle) {
     // recorded audio. Best-effort — failures leave the "Them" labels intact.
     if let Some(w) = &wav {
         if w.exists() {
+            app.emit("transcript-progress", "Identifying speakers…").ok();
             let t0 = std::time::Instant::now();
             match crate::diarization::diarize(app, w) {
                 Ok(speakers) => {
@@ -634,6 +690,7 @@ fn save_transcript(app: &AppHandle) {
     }
 
     eprintln!("[AiBuddy] transcript save: {} segment(s), generating subject…", segments.len());
+    app.emit("transcript-progress", "Writing summary…").ok();
     let session_start = store
         .session_start
         .lock()
