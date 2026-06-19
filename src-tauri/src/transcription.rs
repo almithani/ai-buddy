@@ -968,4 +968,37 @@ mod tests {
         dedup_echo(&mut v);
         assert_eq!(sources(&v), vec!["me"]);
     }
+
+    #[test]
+    fn drops_me_number_word_variant() {
+        // Same audio, different recognition: "100th" vs "hundredth".
+        let mut v = vec![
+            seg("them", "This is my 100th fire.", 30.0),
+            seg("me", "This is my hundredth fire.", 30.2),
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them"]);
+    }
+
+    #[test]
+    fn drops_me_subword_substitution() {
+        // Two-word echo with a sub-word mishearing: "palms" vs "pumps".
+        let mut v = vec![
+            seg("them", "sweaty palms", 12.0),
+            seg("me", "Sweaty pumps.", 12.2),
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them"]);
+    }
+
+    #[test]
+    fn keeps_two_word_non_echo() {
+        // Short but genuinely different from the nearby them → not dropped.
+        let mut v = vec![
+            seg("them", "sweaty palms", 12.0),
+            seg("me", "totally agree", 12.2),
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them", "me"]);
+    }
 }
