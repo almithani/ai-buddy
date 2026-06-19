@@ -529,13 +529,133 @@ fn render_markdown(
     md
 }
 
-/// Replace the "them" source of each segment with a "Speaker N" label by
-/// intersecting its audio time range against diarization segments. Segments
-/// without a time range, or with no overlap, keep "them". "me" is untouched.
+/// Tokenize for echo comparison: lowercase, keep alphanumerics, split on the rest.
+fn normalize_tokens(s: &str) -> Vec<String> {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .map(|w| w.to_string())
+        .collect()
+}
+
+/// (jaccard, containment) over the two token sets. Containment uses the smaller
+/// set as denominator so a short "me" that's a subset of a longer "them" scores high.
+fn token_similarity(a: &[String], b: &[String]) -> (f64, f64) {
+    use std::collections::HashSet;
+    let sa: HashSet<&String> = a.iter().collect();
+    let sb: HashSet<&String> = b.iter().collect();
+    if sa.is_empty() || sb.is_empty() {
+        return (0.0, 0.0);
+    }
+    let inter = sa.intersection(&sb).count();
+    let union = sa.union(&sb).count();
+    let jaccard = inter as f64 / union as f64;
+    let containment = inter as f64 / sa.len().min(sb.len()) as f64;
+    (jaccard, containment)
+}
+
+fn levenshtein(a: &[char], b: &[char]) -> usize {
+    let (n, m) = (a.len(), b.len());
+    if n == 0 {
+        return m;
+    }
+    if m == 0 {
+        return n;
+    }
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut cur = vec![0usize; m + 1];
+    for i in 1..=n {
+        cur[0] = i;
+        for j in 1..=m {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[m]
+}
+
+/// Character-level similarity (1 = identical, 0 = totally different). Catches
+/// the two recognizers transcribing the same sound slightly differently
+/// ("sweaty pumps" vs "sweaty palms", "100th" vs "hundredth").
+fn char_similarity(a: &str, b: &str) -> f64 {
+    let ac: Vec<char> = a.chars().collect();
+    let bc: Vec<char> = b.chars().collect();
+    let max = ac.len().max(bc.len());
+    if max == 0 {
+        return 1.0;
+    }
+    1.0 - (levenshtein(&ac, &bc) as f64 / max as f64)
+}
+
+/// Drop "me" segments that are echoes of a nearby "them" segment — i.e. the mic
+/// re-hearing the participants when the user is on speakers (no headphones).
+/// Conservative: only removes a "me" line that closely matches a "them" line at
+/// about the same time. Self-gating — with headphones the mic never hears the
+/// participants, so nothing matches and nothing is dropped. Only "me" is removed.
+fn dedup_echo(segments: &mut Vec<StoredSegment>) {
+    struct Them {
+        tokens: Vec<String>,
+        norm: String,
+        start: Option<f64>,
+        ts_ms: u64,
+    }
+    let thems: Vec<Them> = segments
+        .iter()
+        .filter(|s| s.source == "them")
+        .map(|s| {
+            let tokens = normalize_tokens(&s.text);
+            Them { norm: tokens.join(" "), tokens, start: s.start_sec, ts_ms: s.ts_ms }
+        })
+        .collect();
+    if thems.is_empty() {
+        return;
+    }
+
+    let before = segments.len();
+    segments.retain(|seg| {
+        if seg.source != "me" {
+            return true;
+        }
+        let me = normalize_tokens(&seg.text);
+        let me_norm = me.join(" ");
+        // Guard tiny utterances by length, not token count, so 2-word echoes
+        // ("sweaty palms") still qualify but "yes"/"ok" never do.
+        if me_norm.len() < 6 {
+            return true;
+        }
+        for t in &thems {
+            let close = match (seg.start_sec, t.start) {
+                (Some(ms), Some(ts)) => (ms - ts).abs() <= 2.5,
+                _ => seg.ts_ms.abs_diff(t.ts_ms) <= 6000,
+            };
+            if !close {
+                continue;
+            }
+            let (jaccard, containment) = token_similarity(&me, &t.tokens);
+            // Word-overlap catches one-word swaps (100th↔hundredth); char-level
+            // catches sub-word substitutions (pumps↔palms) the recognizers make.
+            if jaccard >= 0.6 || containment >= 0.8 || char_similarity(&me_norm, &t.norm) >= 0.72 {
+                return false; // echo of a participant — drop
+            }
+        }
+        true
+    });
+    let dropped = before - segments.len();
+    if dropped > 0 {
+        eprintln!("[AiBuddy] echo dedup: dropped {dropped} duplicate \"Me\" segment(s)");
+    }
+}
+
 /// More distinct speakers than this in one session = the diarization run is
 /// untrustworthy (e.g. over-segmentation), so we keep plain "Them".
 const MAX_TRUSTED_SPEAKERS: usize = 10;
 
+/// Replace the "them" source of each segment with a "Speaker N" label by
+/// intersecting its audio time range against diarization segments. Segments
+/// without a time range, or with no overlap, keep "them". "me" is untouched.
 fn apply_diarization(segments: &mut [StoredSegment], speakers: &[crate::diarization::SpeakerSegment]) {
     if speakers.is_empty() {
         return;
@@ -668,6 +788,10 @@ fn save_transcript(app: &AppHandle) {
         return;
     }
 
+    // Remove mic echoes of participants (speaker bleed) before everything else,
+    // so diarization, subject, and summary all see the cleaned transcript.
+    dedup_echo(&mut segments);
+
     // Speaker diarization: relabel "them" segments as Speaker 1/2/3 from the
     // recorded audio. Best-effort — failures leave the "Them" labels intact.
     if let Some(w) = &wav {
@@ -767,5 +891,81 @@ fn save_transcript(app: &AppHandle) {
             eprintln!("[AiBuddy] transcript save FAILED: {e}");
             app.emit("transcript-save-failed", e).ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seg(source: &str, text: &str, start: f64) -> StoredSegment {
+        StoredSegment {
+            source: source.into(),
+            text: text.into(),
+            ts_ms: (start * 1000.0) as u64,
+            start_sec: Some(start),
+            end_sec: Some(start + 2.0),
+        }
+    }
+
+    fn sources(segs: &[StoredSegment]) -> Vec<&str> {
+        segs.iter().map(|s| s.source.as_str()).collect()
+    }
+
+    #[test]
+    fn drops_me_echo_of_nearby_them() {
+        let mut v = vec![
+            seg("them", "the quarterly numbers look strong this month", 10.0),
+            seg("me", "the quarterly numbers look strong this month", 10.3), // mic bleed
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them"]);
+    }
+
+    #[test]
+    fn keeps_me_when_far_apart_in_time() {
+        let mut v = vec![
+            seg("them", "the quarterly numbers look strong this month", 10.0),
+            seg("me", "the quarterly numbers look strong this month", 40.0), // 30s later — not echo
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them", "me"]);
+    }
+
+    #[test]
+    fn keeps_short_me_utterances() {
+        let mut v = vec![
+            seg("them", "yes absolutely i agree", 5.0),
+            seg("me", "yes", 5.1), // < 3 tokens — never dropped
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them", "me"]);
+    }
+
+    #[test]
+    fn keeps_genuinely_different_me() {
+        let mut v = vec![
+            seg("them", "the quarterly numbers look strong this month", 10.0),
+            seg("me", "can you share your screen with the deck please", 10.4),
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them", "me"]);
+    }
+
+    #[test]
+    fn drops_me_subset_of_longer_them() {
+        let mut v = vec![
+            seg("them", "so the quarterly numbers look strong this month overall", 10.0),
+            seg("me", "quarterly numbers look strong", 10.5), // subset echo (different segmentation)
+        ];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["them"]);
+    }
+
+    #[test]
+    fn no_them_means_no_change() {
+        let mut v = vec![seg("me", "this is just me talking on my own here", 1.0)];
+        dedup_echo(&mut v);
+        assert_eq!(sources(&v), vec!["me"]);
     }
 }
