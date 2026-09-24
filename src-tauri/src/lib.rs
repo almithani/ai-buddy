@@ -5,6 +5,7 @@ mod diarization;
 mod download;
 mod llm;
 mod memory;
+mod settings_nav;
 mod speech_assets;
 mod transcription;
 
@@ -223,6 +224,7 @@ pub fn run() {
                 session_start: std::sync::Mutex::new(None),
                 live_path: std::sync::Mutex::new(None),
                 last_saved: std::sync::Mutex::new(None),
+                processing: std::sync::Mutex::new(None),
             });
 
             // --- Accessibility: previous frontmost app PID ---
@@ -337,6 +339,8 @@ pub fn run() {
             diarization::diarization_models_status,
             diarization::install_diarization_models,
             open_speech_settings,
+            settings_nav::open_system_settings,
+            settings_nav::get_mac_info,
             transcription::is_transcribing,
             transcription::start_transcription,
             transcription::stop_transcription,

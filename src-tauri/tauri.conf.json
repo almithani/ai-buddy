@@ -50,6 +50,20 @@
         "decorations": false,
         "transparent": true,
         "shadow": false
+      },
+      {
+        "label": "highlight",
+        "title": "AI Buddy Highlight",
+        "width": 100,
+        "height": 40,
+        "resizable": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false
       }
     ],
     "security": {

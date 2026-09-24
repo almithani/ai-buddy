@@ -19,6 +19,15 @@ pub struct TranscriptStore {
     pub live_path: Mutex<Option<std::path::PathBuf>>,
     /// The most recent successfully saved transcript file.
     pub last_saved: Mutex<Option<std::path::PathBuf>>,
+    /// Set while the post-Stop save is finalizing (diarization + summary), so a
+    /// remounted TranscriptPanel can restore the "finalizing" status bar.
+    pub processing: Mutex<Option<ProcessingState>>,
+}
+
+#[derive(Clone)]
+pub struct ProcessingState {
+    pub stage: String,
+    pub path: std::path::PathBuf,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -173,7 +182,7 @@ fn update_live_file(app: &AppHandle) {
         .and_then(|g| *g)
         .unwrap_or_else(SystemTime::now)
         .into();
-    let md = render_markdown("Meeting in progress", None, started, &segments);
+    let md = render_markdown("Meeting in progress", SummarySection::Pending, started, &segments);
     if let Err(e) = std::fs::write(&path, md) {
         eprintln!("[AiBuddy] live notes write failed ({}): {e}", path.display());
     }
@@ -359,6 +368,9 @@ pub fn get_transcript(
 pub struct TranscriptFiles {
     pub live: Option<String>,
     pub saved: Option<String>,
+    /// In-progress finalize stage + its working file (set during the save).
+    pub processing_stage: Option<String>,
+    pub processing_path: Option<String>,
 }
 
 #[tauri::command]
@@ -368,9 +380,18 @@ pub fn get_transcript_files(store: tauri::State<'_, TranscriptStore>) -> Transcr
             .ok()
             .and_then(|p| p.as_ref().map(|p| p.to_string_lossy().to_string()))
     };
+    let (processing_stage, processing_path) = store
+        .processing
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .map(|p| (Some(p.stage), Some(p.path.to_string_lossy().to_string())))
+        .unwrap_or((None, None));
     TranscriptFiles {
         live: path_str(&store.live_path),
         saved: path_str(&store.last_saved),
+        processing_stage,
+        processing_path,
     }
 }
 
@@ -436,8 +457,22 @@ fn generate_subject(app: &AppHandle, segments: &[StoredSegment]) -> String {
     }
 }
 
+/// The final minutes prompt over `body` (either the whole transcript when short,
+/// or the concatenated chunk-notes when long).
+fn summarize_minutes_prompt(body: &str) -> String {
+    format!(
+        "You are summarizing a meeting into concise minutes. \
+         Write short markdown bullet points under exactly these three headings \
+         (omit a heading only if it has nothing):\n\
+         **Key Points**\n**Decisions**\n**Action Items**\n\n\
+         Be specific and factual. Do not invent content.\n\nMeeting notes:\n{body}"
+    )
+}
+
 /// Bulleted meeting summary (Key Points / Decisions / Action Items). Returns ""
-/// on error or empty input — the caller then omits the summary body.
+/// on error or empty input. For long meetings it map-reduces (summarize chunks,
+/// then summarize the chunk-notes) so the WHOLE meeting is represented — not
+/// just the opening minutes that would survive `generate_text`'s input cap.
 fn generate_summary(app: &AppHandle, segments: &[StoredSegment]) -> String {
     // Speaker-labeled transcript so the model can attribute decisions/actions.
     let transcript: String = fold_turns(segments)
@@ -456,15 +491,56 @@ fn generate_summary(app: &AppHandle, segments: &[StoredSegment]) -> String {
         return String::new();
     }
 
-    let prompt = format!(
-        "You are summarizing a meeting transcript into concise minutes. \
-         Write short markdown bullet points under exactly these three headings \
-         (omit a heading only if it has nothing):\n\
-         **Key Points**\n**Decisions**\n**Action Items**\n\n\
-         Be specific and factual. Do not invent content.\n\nTranscript:\n{transcript}"
-    );
     let llm = app.state::<crate::llm::LlmState>();
-    crate::llm::generate_text(&llm, &prompt, 400).unwrap_or_default()
+
+    // Short enough to summarize in one pass (stays under generate_text's cap).
+    const ONE_PASS_LIMIT: usize = 9000;
+    if transcript.len() <= ONE_PASS_LIMIT {
+        return crate::llm::generate_text(&llm, &summarize_minutes_prompt(&transcript), 400)
+            .unwrap_or_default();
+    }
+
+    // Long meeting → map-reduce. Split into chunks on line boundaries.
+    const CHUNK_CHARS: usize = 8000;
+    const MAX_CHUNKS: usize = 16; // cap work for extreme meetings
+    let mut chunks: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for line in transcript.lines() {
+        if cur.len() + line.len() + 1 > CHUNK_CHARS && !cur.is_empty() {
+            chunks.push(std::mem::take(&mut cur));
+            if chunks.len() >= MAX_CHUNKS {
+                break;
+            }
+        }
+        cur.push_str(line);
+        cur.push('\n');
+    }
+    if !cur.is_empty() && chunks.len() < MAX_CHUNKS {
+        chunks.push(cur);
+    }
+    eprintln!("[AiBuddy] summary: map-reduce over {} chunk(s)", chunks.len());
+
+    let mut notes = String::new();
+    for (i, chunk) in chunks.iter().enumerate() {
+        let prompt = format!(
+            "Briefly note the key points, decisions, and action items from this \
+             part of a meeting transcript, as short bullet points. Be factual.\n\n\
+             Transcript part:\n{chunk}"
+        );
+        if let Ok(part) = crate::llm::generate_text(&llm, &prompt, 200) {
+            let part = part.trim();
+            if !part.is_empty() {
+                notes.push_str(&format!("Part {}:\n{}\n\n", i + 1, part));
+            }
+        }
+    }
+    if notes.trim().is_empty() {
+        return String::new();
+    }
+
+    // Reduce: the chunk-notes are already small, so this fits one pass.
+    crate::llm::generate_text(&llm, &summarize_minutes_prompt(notes.trim()), 400)
+        .unwrap_or_default()
 }
 
 fn expand_home(raw: &str) -> std::path::PathBuf {
@@ -490,12 +566,20 @@ fn transcript_save_dir(app: &AppHandle) -> std::path::PathBuf {
     expand_home(&configured.unwrap_or_else(|| DEFAULT_TRANSCRIPT_DIR.to_string()))
 }
 
-/// Shared renderer for the live file and the final save. `summary` is the
-/// AI-generated meeting summary (None during the live session — shows a
-/// placeholder; Some at save time).
+/// State of the AI summary section when rendering the meeting-notes file.
+enum SummarySection<'a> {
+    /// Live session — summary is produced at the end.
+    Pending,
+    /// Final summary text.
+    Text(&'a str),
+    /// Save completed but summarization produced nothing.
+    Unavailable,
+}
+
+/// Shared renderer for the live file and the final save.
 fn render_markdown(
     subject: &str,
-    summary: Option<&str>,
+    summary: SummarySection,
     started: chrono::DateTime<chrono::Local>,
     segments: &[StoredSegment],
 ) -> String {
@@ -507,9 +591,12 @@ fn render_markdown(
 
     md.push_str("## AI-Generated Summary\n\n");
     match summary {
-        Some(s) if !s.trim().is_empty() => {
+        SummarySection::Text(s) if !s.trim().is_empty() => {
             md.push_str(s.trim());
             md.push_str("\n\n");
+        }
+        SummarySection::Unavailable => {
+            md.push_str("_Summary unavailable for this meeting._\n\n");
         }
         _ => md.push_str("_Generated when the session ends._\n\n"),
     }
@@ -649,16 +736,22 @@ fn dedup_echo(segments: &mut Vec<StoredSegment>) {
     }
 }
 
-/// More distinct speakers than this in one session = the diarization run is
-/// untrustworthy (e.g. over-segmentation), so we keep plain "Them".
-const MAX_TRUSTED_SPEAKERS: usize = 10;
+/// Beyond this many distinct speakers the run is almost certainly broken
+/// over-segmentation (a real meeting rarely exceeds this), so we discard the
+/// labels and keep "Them". Generous enough for genuinely large meetings.
+const MAX_TRUSTED_SPEAKERS: usize = 24;
 
 /// Replace the "them" source of each segment with a "Speaker N" label by
 /// intersecting its audio time range against diarization segments. Segments
 /// without a time range, or with no overlap, keep "them". "me" is untouched.
-fn apply_diarization(segments: &mut [StoredSegment], speakers: &[crate::diarization::SpeakerSegment]) {
+/// Returns `true` if labels were applied (or there was legitimately nothing to
+/// label), `false` if the result was discarded as unreliable.
+fn apply_diarization(
+    segments: &mut [StoredSegment],
+    speakers: &[crate::diarization::SpeakerSegment],
+) -> bool {
     if speakers.is_empty() {
-        return;
+        return true; // nothing to attribute (e.g. no "them" audio) — not a failure
     }
     // Sanity check: an absurd speaker count means the result is garbage —
     // keep "Them" rather than labelling everyone Speaker 1…57.
@@ -673,7 +766,7 @@ fn apply_diarization(segments: &mut [StoredSegment], speakers: &[crate::diarizat
             "[AiBuddy] diarization: {distinct} speakers detected (> {MAX_TRUSTED_SPEAKERS}) — \
              discarding as unreliable, keeping \"Them\""
         );
-        return;
+        return false;
     }
 
     // Map raw speaker index → 1-based display number in first-appearance order.
@@ -706,6 +799,7 @@ fn apply_diarization(segments: &mut [StoredSegment], speakers: &[crate::diarizat
             seg.source = format!("Speaker {}", display(raw));
         }
     }
+    true
 }
 
 /// Pick a non-colliding `<stem>.md` path in `dir`.
@@ -738,7 +832,7 @@ fn create_live_file(app: &AppHandle, started: SystemTime) -> Option<std::path::P
     // The live name always carries the time for uniqueness; the FINAL name
     // honors the include-time setting at save.
     let stem = format!("{} - Meeting in progress", started.format("%Y-%m-%d %H%M"));
-    let md = render_markdown("Meeting in progress", None, started, &[]);
+    let md = render_markdown("Meeting in progress", SummarySection::Pending, started, &[]);
 
     let dir = transcript_save_dir(app);
     match write_transcript(&dir, &stem, &md) {
@@ -759,6 +853,25 @@ fn create_live_file(app: &AppHandle, started: SystemTime) -> Option<std::path::P
     }
 }
 
+/// Update the finalize stage: stores it (so a remounting panel can restore the
+/// status bar) and emits `transcript-progress` (for live in-place updates).
+/// `None` clears the processing state (save done/failed).
+fn set_processing(
+    app: &AppHandle,
+    store: &TranscriptStore,
+    state: Option<(std::path::PathBuf, &str)>,
+) {
+    if let Ok(mut g) = store.processing.lock() {
+        *g = state.as_ref().map(|(path, stage)| ProcessingState {
+            stage: stage.to_string(),
+            path: path.clone(),
+        });
+    }
+    if let Some((_, stage)) = state {
+        app.emit("transcript-progress", stage).ok();
+    }
+}
+
 /// On failure the transcript store is left untouched — the transcript stays
 /// visible in the UI so the user can copy it manually.
 fn save_transcript(app: &AppHandle) {
@@ -775,6 +888,12 @@ fn save_transcript(app: &AppHandle) {
     // The recorded Them stream, consumed (and always deleted) by diarization.
     let wav = them_session_wav_path(app);
 
+    // Mark "finalizing" so a remounted panel restores the status bar (the live
+    // path was just taken above, and last_saved isn't set until the end).
+    if let Some(p) = &live_path {
+        set_processing(app, &store, Some((p.clone(), "Finalizing…")));
+    }
+
     if segments.is_empty() {
         eprintln!("[AiBuddy] transcript save: store empty — nothing to write");
         // The live file was created at start but holds nothing — clean it up.
@@ -784,6 +903,7 @@ fn save_transcript(app: &AppHandle) {
         if let Some(w) = &wav {
             std::fs::remove_file(w).ok();
         }
+        set_processing(app, &store, None);
         app.emit("transcript-discarded", ()).ok();
         return;
     }
@@ -794,9 +914,12 @@ fn save_transcript(app: &AppHandle) {
 
     // Speaker diarization: relabel "them" segments as Speaker 1/2/3 from the
     // recorded audio. Best-effort — failures leave the "Them" labels intact.
+    let mut diarization_failed = false;
     if let Some(w) = &wav {
         if w.exists() {
-            app.emit("transcript-progress", "Identifying speakers…").ok();
+            if let Some(p) = &live_path {
+                set_processing(app, &store, Some((p.clone(), "Identifying speakers…")));
+            }
             let t0 = std::time::Instant::now();
             match crate::diarization::diarize(app, w) {
                 Ok(speakers) => {
@@ -805,16 +928,23 @@ fn save_transcript(app: &AppHandle) {
                         speakers.len(),
                         t0.elapsed().as_secs_f64()
                     );
-                    apply_diarization(&mut segments, &speakers);
+                    if !apply_diarization(&mut segments, &speakers) {
+                        diarization_failed = true;
+                    }
                 }
-                Err(e) => eprintln!("[AiBuddy] diarization failed: {e}"),
+                Err(e) => {
+                    eprintln!("[AiBuddy] diarization failed: {e}");
+                    diarization_failed = true;
+                }
             }
             std::fs::remove_file(w).ok();
         }
     }
 
     eprintln!("[AiBuddy] transcript save: {} segment(s), generating subject…", segments.len());
-    app.emit("transcript-progress", "Writing summary…").ok();
+    if let Some(p) = &live_path {
+        set_processing(app, &store, Some((p.clone(), "Writing summary…")));
+    }
     let session_start = store
         .session_start
         .lock()
@@ -844,8 +974,12 @@ fn save_transcript(app: &AppHandle) {
         format!("{} - {}", started.format("%Y-%m-%d"), subject)
     };
 
-    let summary_opt = (!summary.trim().is_empty()).then_some(summary.as_str());
-    let md = render_markdown(&subject, summary_opt, started, &segments);
+    let summary_section = if summary.trim().is_empty() {
+        SummarySection::Unavailable
+    } else {
+        SummarySection::Text(&summary)
+    };
+    let md = render_markdown(&subject, summary_section, started, &segments);
 
     // Preferred path: finalize the live file in place (write real subject,
     // rename to the real name). Falls back to a fresh write if there is no
@@ -879,11 +1013,17 @@ fn save_transcript(app: &AppHandle) {
         })
     });
 
+    set_processing(app, &store, None);
     match result {
         Ok(path) => {
             eprintln!("[AiBuddy] transcript saved: {}", path.display());
             if let Ok(mut last) = store.last_saved.lock() {
                 *last = Some(path.clone());
+            }
+            if diarization_failed {
+                // Tell the user the speakers couldn't be separated this time,
+                // rather than silently leaving everyone as "Them".
+                app.emit("transcript-speakers-unavailable", ()).ok();
             }
             app.emit("transcript-saved", path.to_string_lossy().to_string()).ok();
         }

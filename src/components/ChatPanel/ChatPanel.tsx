@@ -206,6 +206,11 @@ export default function ChatPanel() {
       processingNotedRef.current = true;
       injectBuddyMessage("Writing up your meeting notes — identifying speakers and summarizing… 📝");
     });
+    const unlistenSpeakers = listen("transcript-speakers-unavailable", () => {
+      injectBuddyMessage(
+        "I couldn't tell the participants apart this time, so they're all labeled \"Them\"."
+      );
+    });
     const unlistenSaved = listen<string>("transcript-saved", (event) => {
       const path = event.payload;
       const filename = path.split("/").pop() ?? path;
@@ -229,6 +234,7 @@ export default function ChatPanel() {
       unlistenStarted.then((fn) => fn());
       unlistenStopped.then((fn) => fn());
       unlistenProgress.then((fn) => fn());
+      unlistenSpeakers.then((fn) => fn());
       unlistenSaved.then((fn) => fn());
       unlistenSaveFailed.then((fn) => fn());
       unlistenWarning.then((fn) => fn());

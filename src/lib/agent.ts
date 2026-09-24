@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { MemoryItem, describeMemory } from "./memory";
+import { findSettingsTopic, formatTopicList, searchSettings } from "./settingsGuide";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,18 @@ Available tools:
 - store_preference           — Save a user preference for future tasks. Args: {"rule": "..."}
 - get_memory                 — List everything you remember about the user (preferences and settings)
 - set_transcript_settings    — Change where meeting transcripts are auto-saved or their filename format. Args (each optional): {"directory": "~/Desktop", "include_time": "true" or "false"}. Use when the user asks to change where transcripts/meeting minutes are stored, or to include/omit the time in transcript filenames.
+- open_settings              — Open the right System Settings page on the user's Mac and get the steps to walk them through it. Args: {"topic": "<id>"}, using an id from "Mac settings that may be relevant" below.
+- get_mac_info               — Check the Mac's macOS version, battery level, Wi-Fi on/off and sound volume/mute. No args. Use it first when the user asks about these, or when troubleshooting "no sound" / "no internet".
+
+Helping with Mac settings (many users are seniors):
+- When the user wants to change how their Mac looks, sounds, reads aloud or connects (text size, screen reader, captions, Wi-Fi, Bluetooth, volume, ...), call open_settings with the closest topic. Never make up a topic that isn't listed; if nothing fits, say kindly that you can't help with that setting yet.
+- Call open_settings EVERY time the user asks about a setting — even one you helped with earlier in this chat. They may have closed the window, and the setting may have changed.
+- Only mention an orange circle or how a setting is right now if the open_settings result for THIS request says so. Never repeat those from earlier replies.
+- After it opens, explain the returned steps in short, warm, plain sentences. No jargon. Put the words they will see on screen in quotes, like 'Text size'.
+- If the result includes a caution, tell the user before anything else.
+- If the result says how the setting is right now and it is already the way the user wants, tell them it's already set and skip the steps.
+- If the result mentions an orange circle, tell the user to look for it — it's easier than describing where to click.
+- End by inviting them to tell you when they're done or stuck.
 
 Editing the user's selected text:
 - To replace it in place, output the COMPLETE edited text between <replace> and </replace> tags.
@@ -53,7 +66,7 @@ Rules:
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
 
-function buildSystemPrompt(memory: MemoryItem[]): string {
+function buildSystemPrompt(memory: MemoryItem[], settingsQuery: string): string {
   const rules = memory.filter((m) => m.kind === "rule");
   const settings = memory.filter((m) => m.kind === "setting");
 
@@ -65,8 +78,13 @@ function buildSystemPrompt(memory: MemoryItem[]): string {
     settings.length > 0
       ? `\nCurrent settings:\n${settings.map((m) => `- ${describeMemory(m)}`).join("\n")}`
       : "";
+  const topics = searchSettings(settingsQuery);
+  const topicBlock =
+    topics.length > 0
+      ? `\nMac settings that may be relevant (topic ids for open_settings):\n${formatTopicList(topics)}`
+      : "";
 
-  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${ruleBlock}${settingBlock}`;
+  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${ruleBlock}${settingBlock}${topicBlock}`;
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -114,6 +132,29 @@ async function executeTool(
       if (updates.length === 0) return "No settings provided — nothing changed.";
       return `Updated transcript settings: ${updates.join("; ")}`;
     }
+    case "open_settings": {
+      const topic = findSettingsTopic(call.args.topic ?? "");
+      if (!topic) {
+        const near = searchSettings(call.args.topic ?? "", 5);
+        return near.length > 0
+          ? `Unknown topic "${call.args.topic ?? ""}". Closest topics:\n${formatTopicList(near)}`
+          : `No settings topic matches "${call.args.topic ?? ""}".`;
+      }
+      let result: { found: boolean; state: string };
+      try {
+        result = await invoke("open_system_settings", { topic: topic.id });
+      } catch (e) {
+        return `Could not open System Settings: ${e}`;
+      }
+      const name = topic.controlLabel ? `'${topic.controlLabel}'` : "the setting";
+      const state = result.state ? `\nRight now ${name} is ${result.state}.` : "";
+      const ring = result.found ? `\nI've drawn an orange circle around ${name} on screen.` : "";
+      const steps = topic.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+      const caution = topic.caution ? `\nCaution: ${topic.caution}` : "";
+      return `Opened System Settings → ${topic.title}.${state}${ring}${caution}\nSteps:\n${steps}`;
+    }
+    case "get_mac_info":
+      return await invoke<string>("get_mac_info").catch((e) => `Could not read Mac info: ${e}`);
     case "read_file": {
       const path = call.args.path ?? "";
       if (!path) return "No file path provided.";
@@ -152,6 +193,9 @@ function parseEditBlock(text: string): ToolCall | null {
 
 // ── Main agent loop ───────────────────────────────────────────────────────────
 
+// Phrases that only make sense right after open_settings has run.
+const SETTINGS_CLAIM = /orange circle|circled|system settings|settings page|already (set|on|off|correct)|slider|switch (it )?on/i;
+
 export async function runAgent(
   userMessage: string,
   history: ChatMessage[],
@@ -161,7 +205,13 @@ export async function runAgent(
   const { onToken, onStatus, onDroidState, onReplace } = callbacks;
 
   const memory = await invoke<MemoryItem[]>("get_memory").catch(() => []);
-  const systemPrompt = buildSystemPrompt(memory);
+  // Include the previous user turn so follow-ups ("yes, do that") still match.
+  const lastUser = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+  const settingsQuery = `${userMessage} ${lastUser}`;
+  const systemPrompt = buildSystemPrompt(memory, settingsQuery);
+  const settingsRelevant = searchSettings(settingsQuery, 1).length > 0;
+  let settingsOpened = false;
+  let nudged = false;
 
   const finalUserMessage = resourceContext
     ? `${resourceContext}\n\n${userMessage}`
@@ -234,6 +284,22 @@ export async function runAgent(
     // Prefer the raw-text edit block (preserves line breaks) over a JSON tool.
     const toolCall = parseEditBlock(buffer) ?? parseToolCall(buffer);
 
+    // The small model sometimes copies an earlier reply ("look for the orange
+    // circle…") instead of calling open_settings, so the page never opens.
+    // If a reply talks about settings actions without the tool having run this
+    // turn, send it back once to actually open the page.
+    if (!toolCall && settingsRelevant && !settingsOpened && !nudged && SETTINGS_CLAIM.test(buffer)) {
+      nudged = true;
+      onReplace?.("");
+      messages.push({ role: "model", content: buffer });
+      messages.push({
+        role: "user",
+        content:
+          "<tool_result>You have not opened System Settings for this request. Call open_settings now with the best topic id, then answer using only its result.</tool_result>",
+      });
+      continue;
+    }
+
     if (!toolCall) {
       // No tool call — final answer
       onDroidState("done");
@@ -242,6 +308,7 @@ export async function runAgent(
     }
 
     // Execute the tool
+    if (toolCall.name === "open_settings") settingsOpened = true;
     onDroidState("working");
     const toolResult = await executeTool(toolCall, onStatus).catch((e) => `Error: ${e}`);
     onStatus("");

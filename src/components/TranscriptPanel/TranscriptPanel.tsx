@@ -135,11 +135,22 @@ export default function TranscriptPanel({ onSendToChat }: TranscriptPanelProps) 
       setTranscribing(false);
     });
 
-    // Status bar: which file we're recording to / last saved to.
-    invoke<{ live: string | null; saved: string | null }>("get_transcript_files")
+    // Status bar: which file we're recording to / last saved to / finalizing.
+    invoke<{
+      live: string | null;
+      saved: string | null;
+      processingStage: string | null;
+      processingPath: string | null;
+    }>("get_transcript_files")
       .then((f) => {
         setLivePath(f.live);
         setSavedPath(f.saved);
+        // A save is finalizing (live path was taken into the store) — restore
+        // the working file + stage so the status bar survives a tab switch.
+        if (f.processingPath) {
+          setLivePath(f.processingPath);
+          setStage(f.processingStage);
+        }
       })
       .catch(() => null);
     const unlistenStarted = listen<string>("transcription-started", (event) => {

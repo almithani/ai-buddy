@@ -390,6 +390,8 @@ pub async fn generate_response(
                         .emit("llm-token", LlmToken { text: tail[..stop_pos].to_string(), done: false })
                         .ok();
                 }
+                // Already emitted — clear so the post-loop flush doesn't send it again.
+                tail.clear();
                 break;
             }
 

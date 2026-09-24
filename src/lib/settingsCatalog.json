@@ -1,0 +1,1725 @@
+[
+  {
+    "id": "voiceover",
+    "title": "VoiceOver (screen reader)",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_VOICEOVER_ENABLED",
+    "keywords": [
+      "screen reader",
+      "read the screen aloud",
+      "blind",
+      "voiceover",
+      "can't see the screen"
+    ],
+    "controlId": "AX_VOICEOVER_ENABLED",
+    "controlLabel": "VoiceOver",
+    "steps": [
+      "Find the 'VoiceOver' switch at the top of the page.",
+      "Click the switch to turn it on.",
+      "The Mac will start speaking what is on the screen."
+    ],
+    "caution": "VoiceOver changes how the keyboard and mouse behave. To turn it off at any time, hold the Command key and press F5 (on some keyboards, also hold the fn key)."
+  },
+  {
+    "id": "zoom",
+    "title": "Zoom (magnify the screen)",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FEATURE_ZOOM",
+    "keywords": [
+      "magnify",
+      "zoom in",
+      "enlarge screen",
+      "magnifier",
+      "make everything bigger"
+    ],
+    "controlId": "AX_ZOOM_ENABLE_HOTKEYS",
+    "controlLabel": "Use keyboard shortcuts to zoom",
+    "steps": [
+      "Turn on 'Use keyboard shortcuts to zoom'.",
+      "Now hold Option and Command and press the equals key (=) to zoom in.",
+      "Hold Option and Command and press the minus key (-) to zoom out."
+    ]
+  },
+  {
+    "id": "text_size",
+    "title": "Make text bigger",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FONT_SIZE",
+    "keywords": [
+      "bigger text",
+      "larger font",
+      "font size",
+      "text too small",
+      "hard to read",
+      "reading size"
+    ],
+    "controlId": "AX_FONT_SIZE_SLIDER",
+    "controlLabel": "Preferred reading size",
+    "steps": [
+      "Drag the 'Preferred reading size' slider to the right to make text bigger.",
+      "Below it you can choose a size for each app, like Mail or Messages.",
+      "Click 'Done' when you're happy with it."
+    ]
+  },
+  {
+    "id": "increase_contrast",
+    "title": "Increase contrast",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "display",
+    "keywords": [
+      "contrast",
+      "washed out",
+      "hard to see buttons",
+      "edges",
+      "faint"
+    ],
+    "controlId": "AX_INCREASE_CONTRAST",
+    "controlLabel": "Increase contrast",
+    "steps": [
+      "Turn on 'Increase contrast'.",
+      "Buttons and borders will get darker outlines so they stand out."
+    ]
+  },
+  {
+    "id": "reduce_transparency",
+    "title": "Reduce transparency",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "display",
+    "keywords": [
+      "transparency",
+      "see through",
+      "blurry background",
+      "glass"
+    ],
+    "controlId": "AX_REDUCE_TRANSPARENCY",
+    "controlLabel": "Reduce transparency",
+    "steps": [
+      "Turn on 'Reduce transparency'.",
+      "See-through areas like the menu bar and sidebars will become solid."
+    ]
+  },
+  {
+    "id": "invert_colors",
+    "title": "Invert colors",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "display",
+    "keywords": [
+      "invert colors",
+      "reverse colors",
+      "white text on black",
+      "negative"
+    ],
+    "controlId": "AX_INVERT_COLOR",
+    "controlLabel": "Invert colors",
+    "steps": [
+      "Turn on 'Invert colors'.",
+      "'Smart' keeps photos looking normal; 'Classic' inverts everything."
+    ]
+  },
+  {
+    "id": "color_filters",
+    "title": "Color filters (color blindness)",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_DISPLAY_FILTER_ENABLED",
+    "keywords": [
+      "color blind",
+      "colour blind",
+      "color filters",
+      "grayscale",
+      "black and white screen",
+      "tint"
+    ],
+    "controlId": "AX_DISPLAY_FILTER_ENABLED",
+    "controlLabel": "Color filters",
+    "steps": [
+      "Turn on 'Color filters'.",
+      "Pick a 'Filter type', for example Grayscale or one for red/green color blindness.",
+      "Use 'Intensity' to make the effect stronger or weaker."
+    ]
+  },
+  {
+    "id": "pointer_size",
+    "title": "Bigger mouse pointer",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_CURSOR_SIZE",
+    "keywords": [
+      "cursor",
+      "mouse pointer",
+      "arrow too small",
+      "bigger pointer",
+      "pointer size"
+    ],
+    "controlId": "AX_CURSOR_SIZE",
+    "controlLabel": "Pointer size",
+    "steps": [
+      "Drag the 'Pointer size' slider to the right to make the pointer bigger."
+    ]
+  },
+  {
+    "id": "find_pointer",
+    "title": "Shake to find the pointer",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FIND_CURSOR",
+    "keywords": [
+      "can't find the mouse",
+      "lost the pointer",
+      "where is the cursor",
+      "shake mouse"
+    ],
+    "controlId": "AX_FIND_CURSOR",
+    "controlLabel": "Shake mouse pointer to locate",
+    "steps": [
+      "Turn on 'Shake mouse pointer to locate'.",
+      "Now when you lose the pointer, wiggle the mouse or your finger quickly and it will grow for a moment."
+    ]
+  },
+  {
+    "id": "reduce_motion",
+    "title": "Reduce motion",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_REDUCE_MOTION",
+    "keywords": [
+      "motion sickness",
+      "dizzy",
+      "animations",
+      "reduce motion",
+      "moving screen"
+    ],
+    "controlId": "AX_REDUCE_MOTION",
+    "controlLabel": "Reduce motion",
+    "steps": [
+      "Turn on 'Reduce motion'.",
+      "Sliding and zooming animations will be replaced with gentle fades."
+    ]
+  },
+  {
+    "id": "dim_flashing",
+    "title": "Dim flashing lights",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_DIM_FLASHING",
+    "keywords": [
+      "flashing lights",
+      "strobe",
+      "epilepsy",
+      "seizure",
+      "flicker"
+    ],
+    "controlId": "AX_DIM_FLASHING",
+    "controlLabel": "Dim flashing lights",
+    "steps": [
+      "Turn on 'Dim flashing lights'.",
+      "Videos with flashing or strobing lights will be dimmed automatically."
+    ]
+  },
+  {
+    "id": "spoken_content",
+    "title": "Read selected text aloud",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FEATURE_SPOKENCONTENT",
+    "keywords": [
+      "read aloud",
+      "speak text",
+      "text to speech",
+      "read to me",
+      "read out loud",
+      "out loud"
+    ],
+    "controlId": "AX_SPOKEN_HOTKEY",
+    "controlLabel": "Speak selection",
+    "steps": [
+      "Turn on 'Speak selection'.",
+      "Now highlight any text, then hold Option and press Escape to hear it read aloud.",
+      "Change the voice with 'System voice'."
+    ]
+  },
+  {
+    "id": "speak_pointer",
+    "title": "Speak what's under the pointer",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_SPOKEN_POINTER_ELEMENT",
+    "keywords": [
+      "read what I point at",
+      "speak under mouse",
+      "speak item under pointer"
+    ],
+    "controlId": "AX_SPOKEN_POINTER_ELEMENT",
+    "controlLabel": "Speak item under the pointer",
+    "steps": [
+      "Turn on 'Speak item under the pointer'.",
+      "The Mac will read out whatever you rest the pointer on."
+    ]
+  },
+  {
+    "id": "hover_text",
+    "title": "Hover Text (big text under the pointer)",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_HOVER_TEXT_ENABLE",
+    "keywords": [
+      "hover text",
+      "magnify text under pointer",
+      "enlarge word"
+    ],
+    "controlId": "AX_HOVER_TEXT_ENABLE",
+    "controlLabel": "Hover Text",
+    "steps": [
+      "Turn on 'Hover Text'.",
+      "Hold the Command key while pointing at text to see it large in a bubble."
+    ]
+  },
+  {
+    "id": "accessibility_shortcut",
+    "title": "Accessibility shortcut",
+    "category": "vision",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FEATURE_SHORTCUT",
+    "keywords": [
+      "accessibility shortcut",
+      "quick turn on",
+      "option command f5",
+      "shortcut panel"
+    ],
+    "steps": [
+      "Tick the features you want in the shortcut, for example VoiceOver or Zoom.",
+      "Then press Option, Command and F5 together at any time to turn them on or off."
+    ]
+  },
+  {
+    "id": "captions",
+    "title": "Subtitles and captions",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FEATURE_CAPTIONS",
+    "keywords": [
+      "subtitles",
+      "captions",
+      "closed captions",
+      "sdh"
+    ],
+    "controlId": "AX_CAPTIONING_PREFER_SDH",
+    "controlLabel": "Prefer closed captions and SDH",
+    "steps": [
+      "Turn on 'Prefer closed captions and SDH' so videos show subtitles when they have them.",
+      "Pick a caption style from the list. 'Large Text' is easiest to read."
+    ]
+  },
+  {
+    "id": "live_captions",
+    "title": "Live Captions (words on screen for any sound)",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_SYSTEM_TRANSCRIPTION_ENABLED",
+    "keywords": [
+      "live captions",
+      "transcribe",
+      "show what people say",
+      "deaf",
+      "hard of hearing",
+      "captions for calls"
+    ],
+    "controlId": "AX_SYSTEM_TRANSCRIPTION_ENABLED",
+    "controlLabel": "Live Captions",
+    "steps": [
+      "Turn on 'Live Captions'.",
+      "A small box will appear that shows spoken words as text, from calls, videos or the room.",
+      "You can change the 'Font family' and colors below."
+    ]
+  },
+  {
+    "id": "hearing_devices",
+    "title": "Hearing aids",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FEATURE_HEARINGAIDS",
+    "keywords": [
+      "hearing aid",
+      "hearing device",
+      "made for iphone hearing"
+    ],
+    "steps": [
+      "Make sure your hearing aids are on and nearby.",
+      "Wait for them to appear in the list, then click their name to connect."
+    ]
+  },
+  {
+    "id": "flash_screen",
+    "title": "Flash the screen for alerts",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FLASH_SCREEN",
+    "keywords": [
+      "flash screen",
+      "visual alert",
+      "can't hear alerts",
+      "flash for notifications"
+    ],
+    "controlId": "AX_FLASH_SCREEN",
+    "controlLabel": "Flash the screen when an alert sound occurs",
+    "steps": [
+      "Turn on 'Flash the screen when an alert sound occurs'."
+    ]
+  },
+  {
+    "id": "mono_audio",
+    "title": "Mono audio (one ear)",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_MONO_AUDIO",
+    "keywords": [
+      "mono",
+      "one ear",
+      "deaf in one ear",
+      "sound only in one side"
+    ],
+    "controlId": "AX_MONO_AUDIO",
+    "controlLabel": "Play stereo audio as mono",
+    "steps": [
+      "Turn on 'Play stereo audio as mono'.",
+      "Both sides of your headphones will now play everything."
+    ]
+  },
+  {
+    "id": "background_sounds",
+    "title": "Background sounds (rain, ocean)",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_BACKGROUND_SOUNDS",
+    "keywords": [
+      "background sounds",
+      "white noise",
+      "rain sounds",
+      "tinnitus",
+      "calming sound",
+      "ocean"
+    ],
+    "controlId": "AX_BACKGROUND_SOUNDS",
+    "controlLabel": "Background sounds",
+    "steps": [
+      "Turn on 'Background sounds'.",
+      "Click 'Choose…' to pick a sound like Rain or Ocean.",
+      "Use 'Background sounds volume' to set how loud it is."
+    ]
+  },
+  {
+    "id": "headphone_accommodations",
+    "title": "Headphone Accommodations",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_PME_TOGGLE",
+    "keywords": [
+      "headphone accommodations",
+      "boost soft sounds",
+      "tune headphones",
+      "hearing boost"
+    ],
+    "controlId": "AX_PME_TOGGLE",
+    "controlLabel": "Headphone Accommodations",
+    "steps": [
+      "Turn on 'Headphone Accommodations'.",
+      "Click 'Customize Audio' to tune the sound to your hearing."
+    ]
+  },
+  {
+    "id": "audio_descriptions",
+    "title": "Audio descriptions for videos",
+    "category": "hearing",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FEATURE_DESCRIPTIONS",
+    "keywords": [
+      "audio description",
+      "describe video",
+      "narrated video"
+    ],
+    "controlId": "AX_VIDEO_DESCRIPTION",
+    "controlLabel": "Play audio descriptions when available",
+    "steps": [
+      "Turn on 'Play audio descriptions when available'."
+    ]
+  },
+  {
+    "id": "sticky_keys",
+    "title": "Sticky Keys (one key at a time)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_STICKY_KEYS",
+    "keywords": [
+      "sticky keys",
+      "press one key at a time",
+      "can't hold two keys",
+      "shortcuts hard"
+    ],
+    "controlId": "AX_STICKY_KEYS",
+    "controlLabel": "Sticky Keys",
+    "steps": [
+      "Turn on 'Sticky Keys'.",
+      "Now you can press keys like Command, then the letter, one after the other instead of together."
+    ]
+  },
+  {
+    "id": "slow_keys",
+    "title": "Slow Keys (ignore accidental key presses)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_SLOW_KEYS",
+    "keywords": [
+      "slow keys",
+      "shaky hands",
+      "accidental key presses",
+      "tremor",
+      "double letters"
+    ],
+    "controlId": "AX_SLOW_KEYS",
+    "controlLabel": "Slow Keys",
+    "steps": [
+      "Turn on 'Slow Keys'.",
+      "Keys will only count when you hold them down a little longer."
+    ]
+  },
+  {
+    "id": "accessibility_keyboard",
+    "title": "On-screen keyboard",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_VIRTUAL_KEYBOARD",
+    "keywords": [
+      "on screen keyboard",
+      "virtual keyboard",
+      "type with the mouse",
+      "keyboard on screen"
+    ],
+    "controlId": "AX_VIRTUAL_KEYBOARD",
+    "controlLabel": "Accessibility Keyboard",
+    "steps": [
+      "Turn on 'Accessibility Keyboard'.",
+      "A keyboard will appear on screen that you can click with the mouse."
+    ]
+  },
+  {
+    "id": "full_keyboard_access",
+    "title": "Full Keyboard Access (no mouse)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_FKA_ENABLE_CHECKBOX",
+    "keywords": [
+      "use without mouse",
+      "keyboard only",
+      "tab through buttons",
+      "full keyboard access"
+    ],
+    "controlId": "AX_FKA_ENABLE_CHECKBOX",
+    "controlLabel": "Full Keyboard Access",
+    "steps": [
+      "Turn on 'Full Keyboard Access'.",
+      "Press Tab to move between buttons and Space to press them."
+    ]
+  },
+  {
+    "id": "mouse_keys",
+    "title": "Mouse Keys (move pointer with keys)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_MOUSE_KEYS",
+    "keywords": [
+      "mouse keys",
+      "move pointer with keyboard",
+      "no mouse"
+    ],
+    "controlId": "AX_MOUSE_KEYS",
+    "controlLabel": "Mouse Keys",
+    "steps": [
+      "Turn on 'Mouse Keys'.",
+      "Use the number keys (or the keys around 'I' on a laptop) to move the pointer."
+    ]
+  },
+  {
+    "id": "double_click_speed",
+    "title": "Double-click speed",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_MOUSE_DOUBLE_CLICK_SPEED",
+    "keywords": [
+      "double click",
+      "double-click too fast",
+      "can't double click",
+      "slow down double click"
+    ],
+    "controlId": "AX_MOUSE_DOUBLE_CLICK_SPEED",
+    "controlLabel": "Double-click speed",
+    "steps": [
+      "Drag the 'Double-click speed' slider to the left to give yourself more time between clicks."
+    ]
+  },
+  {
+    "id": "head_pointer",
+    "title": "Head pointer (move pointer with your head)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_HEAD_MOUSE",
+    "keywords": [
+      "head pointer",
+      "head mouse",
+      "control with head",
+      "camera pointer"
+    ],
+    "controlId": "AX_HEAD_MOUSE",
+    "controlLabel": "Head pointer",
+    "steps": [
+      "Turn on 'Head pointer'.",
+      "The camera will follow your head movements to move the pointer."
+    ]
+  },
+  {
+    "id": "voice_control",
+    "title": "Voice Control (control the Mac by voice)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_VOICE_CONTROL_ENABLED",
+    "keywords": [
+      "voice control",
+      "control by voice",
+      "speak commands",
+      "hands free",
+      "talk to my computer"
+    ],
+    "controlId": "AX_VOICE_CONTROL_ENABLED",
+    "controlLabel": "Voice Control",
+    "steps": [
+      "Turn on 'Voice Control'.",
+      "Say things like 'Open Mail' or 'Click Done'. Say 'Show commands' to see what you can say."
+    ]
+  },
+  {
+    "id": "live_speech",
+    "title": "Live Speech (type to speak)",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_LIVE_SPEECH_ENABLED",
+    "keywords": [
+      "type to speak",
+      "can't talk",
+      "live speech",
+      "speak for me",
+      "lost my voice"
+    ],
+    "controlId": "AX_LIVE_SPEECH_ENABLED",
+    "controlLabel": "Live Speech",
+    "steps": [
+      "Turn on 'Live Speech'.",
+      "Press Option, Command and F5 and choose Live Speech, then type and press Return to have the Mac say it out loud."
+    ]
+  },
+  {
+    "id": "switch_control",
+    "title": "Switch Control",
+    "category": "motor",
+    "pane": "com.apple.Accessibility-Settings.extension",
+    "anchor": "AX_SWITCH_CONTROL_ENABLE",
+    "keywords": [
+      "switch control",
+      "adaptive switch",
+      "single switch"
+    ],
+    "controlId": "AX_SWITCH_CONTROL_ENABLE",
+    "controlLabel": "Switch Control",
+    "steps": [
+      "Turn on 'Switch Control'.",
+      "Use 'Add' under Switches to set up the switch you use."
+    ]
+  },
+  {
+    "id": "wifi",
+    "title": "Wi-Fi",
+    "category": "connect",
+    "pane": "com.apple.wifi-settings-extension",
+    "keywords": [
+      "internet",
+      "wifi",
+      "wireless",
+      "network",
+      "not connected",
+      "online"
+    ],
+    "controlLabel": "Wi-Fi",
+    "steps": [
+      "Make sure the 'Wi-Fi' switch at the top is on (blue).",
+      "Click the name of your network in the list.",
+      "Type the Wi-Fi password when asked, then click 'Join'."
+    ]
+  },
+  {
+    "id": "bluetooth",
+    "title": "Bluetooth (headphones, speakers, mouse)",
+    "category": "connect",
+    "pane": "com.apple.BluetoothSettings",
+    "keywords": [
+      "bluetooth",
+      "headphones",
+      "airpods",
+      "wireless speaker",
+      "wireless mouse",
+      "pair",
+      "connect"
+    ],
+    "controlLabel": "Bluetooth",
+    "steps": [
+      "Make sure the 'Bluetooth' switch at the top is on (blue).",
+      "Put your device in pairing mode (see its instructions; often you hold its power button).",
+      "When it appears under 'Nearby Devices', click 'Connect' next to it."
+    ]
+  },
+  {
+    "id": "airdrop",
+    "title": "AirDrop (share with nearby Apple devices)",
+    "category": "connect",
+    "pane": "com.apple.AirDrop-Handoff-Settings.extension",
+    "anchor": "AirDrop_Handoff",
+    "keywords": [
+      "airdrop",
+      "send photo to iphone",
+      "share nearby",
+      "receive from iphone"
+    ],
+    "controlLabel": "AirDrop",
+    "steps": [
+      "Click the 'AirDrop' menu.",
+      "Choose 'Contacts Only' to receive from people you know, or 'Everyone for 10 Minutes' for anyone nearby."
+    ]
+  },
+  {
+    "id": "printers",
+    "title": "Printers and scanners",
+    "category": "connect",
+    "pane": "com.apple.Print-Scan-Settings.extension",
+    "anchor": "print",
+    "keywords": [
+      "printer",
+      "print",
+      "add printer",
+      "scanner",
+      "printing not working"
+    ],
+    "steps": [
+      "Make sure the printer is on and connected to the same Wi-Fi.",
+      "Click 'Add Printer, Scanner or Fax…'.",
+      "Choose your printer from the list and click 'Add'."
+    ]
+  },
+  {
+    "id": "sound",
+    "title": "Sound output and volume",
+    "category": "sound",
+    "pane": "com.apple.Sound-Settings.extension",
+    "anchor": "output",
+    "keywords": [
+      "volume",
+      "too quiet",
+      "too loud",
+      "speakers",
+      "no sound",
+      "mute",
+      "output"
+    ],
+    "controlLabel": "Output volume",
+    "steps": [
+      "Under 'Output', click the speakers or headphones you want to use.",
+      "Drag the 'Output volume' slider to the right to make it louder.",
+      "Make sure 'Mute' is not ticked."
+    ]
+  },
+  {
+    "id": "alert_sound",
+    "title": "Alert sound",
+    "category": "sound",
+    "pane": "com.apple.Sound-Settings.extension",
+    "keywords": [
+      "alert sound",
+      "beep",
+      "error sound",
+      "notification sound"
+    ],
+    "controlId": "AlertSoundPicker",
+    "controlLabel": "Alert sound",
+    "steps": [
+      "Click the 'Alert sound' menu and choose a sound you like.",
+      "Use the 'Alert volume' slider to make alerts louder or softer."
+    ]
+  },
+  {
+    "id": "startup_sound",
+    "title": "Startup chime",
+    "category": "sound",
+    "pane": "com.apple.Sound-Settings.extension",
+    "keywords": [
+      "startup sound",
+      "chime when turning on",
+      "boot sound"
+    ],
+    "controlId": "BootChimeCheckbox",
+    "controlLabel": "Play sound on startup",
+    "steps": [
+      "Turn 'Play sound on startup' on or off."
+    ]
+  },
+  {
+    "id": "microphone_volume",
+    "title": "Microphone level",
+    "category": "sound",
+    "pane": "com.apple.Sound-Settings.extension",
+    "anchor": "input",
+    "keywords": [
+      "microphone",
+      "they can't hear me",
+      "mic too quiet",
+      "input volume"
+    ],
+    "controlId": "InputVolumeSlider",
+    "controlLabel": "Input volume",
+    "steps": [
+      "Click 'Input', then choose the microphone you want to use.",
+      "Drag the 'Input volume' slider to the right if people can't hear you."
+    ]
+  },
+  {
+    "id": "brightness",
+    "title": "Screen brightness",
+    "category": "display",
+    "pane": "com.apple.Displays-Settings.extension",
+    "keywords": [
+      "brightness",
+      "screen too dark",
+      "screen too bright",
+      "dim",
+      "brighter"
+    ],
+    "controlLabel": "Brightness",
+    "steps": [
+      "Drag the 'Brightness' slider right to make the screen brighter, or left to make it darker."
+    ]
+  },
+  {
+    "id": "auto_brightness",
+    "title": "Automatic brightness",
+    "category": "display",
+    "pane": "com.apple.Displays-Settings.extension",
+    "keywords": [
+      "brightness keeps changing",
+      "auto brightness",
+      "screen dims by itself"
+    ],
+    "controlLabel": "Automatically adjust brightness",
+    "steps": [
+      "Turn 'Automatically adjust brightness' off if the screen keeps changing by itself."
+    ]
+  },
+  {
+    "id": "true_tone",
+    "title": "True Tone (warmer screen colors)",
+    "category": "display",
+    "pane": "com.apple.Displays-Settings.extension",
+    "keywords": [
+      "true tone",
+      "screen looks yellow",
+      "screen color changes"
+    ],
+    "controlLabel": "True Tone",
+    "steps": [
+      "Turn 'True Tone' on or off. It makes colors look warmer in warm room light."
+    ]
+  },
+  {
+    "id": "night_shift",
+    "title": "Night Shift (warmer screen at night)",
+    "category": "display",
+    "pane": "com.apple.Displays-Settings.extension",
+    "anchor": "nightShiftSection",
+    "keywords": [
+      "night shift",
+      "blue light",
+      "screen too blue at night",
+      "warm screen",
+      "sleep better"
+    ],
+    "steps": [
+      "Scroll down and click 'Night Shift…'.",
+      "Choose a 'Schedule', for example 'Sunset to Sunrise'.",
+      "Drag 'Color temperature' toward 'More Warm' if you like."
+    ]
+  },
+  {
+    "id": "screen_scale",
+    "title": "Make everything on screen bigger",
+    "category": "display",
+    "pane": "com.apple.Displays-Settings.extension",
+    "anchor": "resolutionSection",
+    "keywords": [
+      "everything too small",
+      "larger text resolution",
+      "screen resolution",
+      "icons too small",
+      "make everything bigger"
+    ],
+    "steps": [
+      "Under the picture of your screen, click the option on the left, 'Larger Text'.",
+      "Everything on screen gets bigger. Pick one to the right if it's too big."
+    ]
+  },
+  {
+    "id": "dark_mode",
+    "title": "Dark Mode / Light Mode",
+    "category": "appearance",
+    "pane": "com.apple.Appearance-Settings.extension",
+    "keywords": [
+      "dark mode",
+      "light mode",
+      "black background",
+      "white background",
+      "night mode"
+    ],
+    "steps": [
+      "At the top next to 'Appearance', click 'Light', 'Dark' or 'Auto'.",
+      "'Auto' switches to dark in the evening."
+    ]
+  },
+  {
+    "id": "scroll_bars",
+    "title": "Always show scroll bars",
+    "category": "appearance",
+    "pane": "com.apple.Appearance-Settings.extension",
+    "keywords": [
+      "scroll bars disappear",
+      "scroll bar",
+      "can't find scroll bar"
+    ],
+    "controlLabel": "Always",
+    "steps": [
+      "Next to 'Show scroll bars', choose 'Always'."
+    ]
+  },
+  {
+    "id": "sidebar_icon_size",
+    "title": "Bigger sidebar icons",
+    "category": "appearance",
+    "pane": "com.apple.Appearance-Settings.extension",
+    "keywords": [
+      "sidebar icons small",
+      "finder sidebar",
+      "icon size"
+    ],
+    "controlId": "SidebarIconSizePicker",
+    "controlLabel": "Sidebar icon size",
+    "steps": [
+      "Click the 'Sidebar icon size' menu and choose 'Large'."
+    ]
+  },
+  {
+    "id": "wallpaper",
+    "title": "Wallpaper (desktop picture)",
+    "category": "appearance",
+    "pane": "com.apple.Wallpaper-Settings.extension",
+    "anchor": "Wallpaper",
+    "keywords": [
+      "wallpaper",
+      "desktop picture",
+      "background picture",
+      "change background"
+    ],
+    "steps": [
+      "Click any picture to use it as your desktop picture.",
+      "To use your own photo, click 'Add Photo' or 'Add Folder' at the top."
+    ]
+  },
+  {
+    "id": "screen_saver",
+    "title": "Screen saver",
+    "category": "appearance",
+    "pane": "com.apple.Wallpaper-Settings.extension",
+    "anchor": "ScreenSaver",
+    "keywords": [
+      "screen saver",
+      "screensaver"
+    ],
+    "steps": [
+      "Click a screen saver to choose it.",
+      "To set when it starts, see the Lock Screen settings."
+    ]
+  },
+  {
+    "id": "dock_size",
+    "title": "Dock size",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "keywords": [
+      "dock too small",
+      "dock icons",
+      "bigger dock",
+      "bottom bar"
+    ],
+    "controlLabel": "Dock Size",
+    "steps": [
+      "Drag the 'Size' slider toward 'Large' to make the Dock icons bigger."
+    ]
+  },
+  {
+    "id": "dock_magnification",
+    "title": "Dock magnification",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "keywords": [
+      "dock magnification",
+      "icons grow",
+      "dock zoom"
+    ],
+    "controlLabel": "Dock Magnification Size",
+    "steps": [
+      "Turn on 'Magnification'.",
+      "Drag its slider to choose how big icons grow when you point at them."
+    ]
+  },
+  {
+    "id": "dock_autohide",
+    "title": "Hide or show the Dock",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "keywords": [
+      "dock disappeared",
+      "dock hides",
+      "dock missing",
+      "hide dock"
+    ],
+    "controlId": "auto-hide-dock",
+    "controlLabel": "Automatically hide and show the Dock",
+    "steps": [
+      "Turn off 'Automatically hide and show the Dock' to keep the Dock always visible."
+    ]
+  },
+  {
+    "id": "dock_position",
+    "title": "Move the Dock",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "keywords": [
+      "dock position",
+      "dock on the side",
+      "move dock"
+    ],
+    "controlId": "position",
+    "controlLabel": "Dock position on screen",
+    "steps": [
+      "Click the 'Position on screen' menu and choose Left, Bottom or Right."
+    ]
+  },
+  {
+    "id": "stage_manager",
+    "title": "Stage Manager",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "anchor": "StageManager",
+    "keywords": [
+      "stage manager",
+      "windows on the left",
+      "windows grouped"
+    ],
+    "controlId": "stage-manager-on",
+    "controlLabel": "Stage Manager",
+    "steps": [
+      "Turn 'Stage Manager' on or off. It keeps recent windows in a strip on the left."
+    ]
+  },
+  {
+    "id": "default_browser",
+    "title": "Default web browser",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "keywords": [
+      "default browser",
+      "links open in wrong browser",
+      "safari or chrome"
+    ],
+    "controlId": "default-web-browser",
+    "controlLabel": "Default web browser",
+    "steps": [
+      "Click the 'Default web browser' menu and choose the browser you want links to open in."
+    ]
+  },
+  {
+    "id": "hot_corners",
+    "title": "Hot Corners",
+    "category": "desktop",
+    "pane": "com.apple.Desktop-Settings.extension",
+    "anchor": "HotCorners",
+    "keywords": [
+      "hot corners",
+      "things happen in corner",
+      "corner of screen"
+    ],
+    "steps": [
+      "Scroll to the bottom and click 'Hot Corners…'.",
+      "Set a corner to '-' to stop it doing something when the pointer touches it."
+    ]
+  },
+  {
+    "id": "trackpad_speed",
+    "title": "Trackpad pointer speed",
+    "category": "trackpad",
+    "pane": "com.apple.Trackpad-Settings.extension",
+    "keywords": [
+      "trackpad speed",
+      "pointer too fast",
+      "pointer too slow",
+      "mouse too slow",
+      "mouse too fast"
+    ],
+    "controlId": "TrackingSpeedSlider",
+    "controlLabel": "Tracking speed",
+    "steps": [
+      "Drag the 'Tracking speed' slider left to slow the pointer down, or right to speed it up."
+    ]
+  },
+  {
+    "id": "tap_to_click",
+    "title": "Tap to click",
+    "category": "trackpad",
+    "pane": "com.apple.Trackpad-Settings.extension",
+    "keywords": [
+      "tap to click",
+      "clicks by accident",
+      "tap instead of press"
+    ],
+    "controlId": "TapToClickToggle",
+    "controlLabel": "Tap to click",
+    "steps": [
+      "Turn 'Tap to click' on to click with a light tap, or off to stop accidental clicks."
+    ]
+  },
+  {
+    "id": "right_click",
+    "title": "Right-click (secondary click)",
+    "category": "trackpad",
+    "pane": "com.apple.Trackpad-Settings.extension",
+    "keywords": [
+      "right click",
+      "secondary click",
+      "control click",
+      "two finger click"
+    ],
+    "controlId": "SecondaryClickOptions",
+    "controlLabel": "Secondary click",
+    "steps": [
+      "Click the 'Secondary click' menu.",
+      "'Click with Two Fingers' is the usual choice; you can also pick a corner."
+    ]
+  },
+  {
+    "id": "click_pressure",
+    "title": "Click firmness",
+    "category": "trackpad",
+    "pane": "com.apple.Trackpad-Settings.extension",
+    "keywords": [
+      "click too hard",
+      "trackpad click",
+      "click pressure"
+    ],
+    "controlId": "ClickPressureSlider",
+    "controlLabel": "Click",
+    "steps": [
+      "Drag the 'Click' slider to 'Light' if clicking takes too much pressure."
+    ]
+  },
+  {
+    "id": "scroll_direction",
+    "title": "Scroll direction",
+    "category": "trackpad",
+    "pane": "com.apple.Trackpad-Settings.extension",
+    "keywords": [
+      "scroll direction",
+      "scrolling backwards",
+      "natural scrolling",
+      "scrolls wrong way"
+    ],
+    "steps": [
+      "Click the 'Scroll & Zoom' tab at the top.",
+      "Turn 'Natural scrolling' off if the page moves the opposite way you expect."
+    ]
+  },
+  {
+    "id": "key_repeat",
+    "title": "Key repeat",
+    "category": "keyboard",
+    "pane": "com.apple.Keyboard-Settings.extension",
+    "keywords": [
+      "letters repeat",
+      "keys repeating",
+      "key repeat",
+      "double letters"
+    ],
+    "controlLabel": "Key repeat rate",
+    "steps": [
+      "Drag 'Key repeat rate' toward 'Off' or 'Slow'.",
+      "Drag 'Delay until repeat' toward 'Long' so held keys don't repeat so quickly."
+    ]
+  },
+  {
+    "id": "keyboard_brightness",
+    "title": "Keyboard backlight",
+    "category": "keyboard",
+    "pane": "com.apple.Keyboard-Settings.extension",
+    "keywords": [
+      "keyboard light",
+      "keys lit up",
+      "backlight"
+    ],
+    "controlLabel": "Adjust keyboard brightness in low light",
+    "steps": [
+      "Turn 'Adjust keyboard brightness in low light' on or off."
+    ]
+  },
+  {
+    "id": "dictation",
+    "title": "Dictation (type by talking)",
+    "category": "keyboard",
+    "pane": "com.apple.Keyboard-Settings.extension",
+    "anchor": "Dictation",
+    "keywords": [
+      "dictation",
+      "type with voice",
+      "speak instead of typing",
+      "voice typing"
+    ],
+    "controlLabel": "Use Dictation wherever you can type text",
+    "steps": [
+      "Turn on the 'Dictation' switch.",
+      "In any place you can type, press the microphone key (or the 'Shortcut' shown) and start talking."
+    ]
+  },
+  {
+    "id": "text_replacements",
+    "title": "Text replacements",
+    "category": "keyboard",
+    "pane": "com.apple.Keyboard-Settings.extension",
+    "anchor": "TextReplacements",
+    "keywords": [
+      "text replacement",
+      "autocorrect",
+      "shortcuts for typing",
+      "expand text"
+    ],
+    "steps": [
+      "Click 'Text Replacements…'.",
+      "Click '+' to add a short code that expands to a longer phrase, like your address."
+    ]
+  },
+  {
+    "id": "keyboard_language",
+    "title": "Add a keyboard language",
+    "category": "keyboard",
+    "pane": "com.apple.Keyboard-Settings.extension",
+    "anchor": "InputSources",
+    "keywords": [
+      "another language keyboard",
+      "input source",
+      "type in french",
+      "type in spanish"
+    ],
+    "steps": [
+      "Next to 'Input Sources', click 'Edit…'.",
+      "Click '+' and choose the language you want to type in."
+    ]
+  },
+  {
+    "id": "low_power_mode",
+    "title": "Low Power Mode",
+    "category": "battery",
+    "pane": "com.apple.Battery-Settings.extension*BatteryPreferences",
+    "keywords": [
+      "battery life",
+      "battery drains",
+      "save battery",
+      "low power mode"
+    ],
+    "controlId": "low_power_mode",
+    "controlLabel": "Low Power Mode",
+    "steps": [
+      "Click the 'Low Power Mode' menu and choose 'Only on Battery' or 'Always'."
+    ]
+  },
+  {
+    "id": "battery_options",
+    "title": "Battery health and charging",
+    "category": "battery",
+    "pane": "com.apple.Battery-Settings.extension*BatteryPreferences",
+    "keywords": [
+      "battery health",
+      "optimized charging",
+      "charging stops at 80",
+      "battery not charging fully"
+    ],
+    "controlId": "options",
+    "controlLabel": "Options",
+    "steps": [
+      "Click 'Options…' to see charging settings like 'Optimize Battery Charging'.",
+      "Next to 'Battery Health', click the 'i' button to see its condition."
+    ]
+  },
+  {
+    "id": "display_sleep",
+    "title": "When the screen turns off",
+    "category": "battery",
+    "pane": "com.apple.Lock-Screen-Settings.extension",
+    "keywords": [
+      "screen turns off too fast",
+      "screen goes black",
+      "display sleep",
+      "keep screen on",
+      "sleep"
+    ],
+    "controlLabel": "Turn display off",
+    "steps": [
+      "Click the 'Turn display off … when inactive' menu.",
+      "Choose a longer time, like 30 minutes, so the screen stays on longer."
+    ]
+  },
+  {
+    "id": "require_password",
+    "title": "Password after sleep",
+    "category": "security",
+    "pane": "com.apple.Lock-Screen-Settings.extension",
+    "keywords": [
+      "asks for password",
+      "password after sleep",
+      "lock screen password"
+    ],
+    "controlLabel": "Require password after screen saver begins",
+    "steps": [
+      "Click the 'Require password after screen saver begins or display is turned off' menu.",
+      "Choose how long to wait before the Mac asks for your password."
+    ]
+  },
+  {
+    "id": "lock_screen_message",
+    "title": "Lock screen message",
+    "category": "security",
+    "pane": "com.apple.Lock-Screen-Settings.extension",
+    "keywords": [
+      "lock screen message",
+      "if found call",
+      "message on login screen"
+    ],
+    "controlLabel": "Show message when locked",
+    "steps": [
+      "Turn on 'Show message when locked'.",
+      "Click 'Set…' and type something like 'If found, please call …'."
+    ]
+  },
+  {
+    "id": "touch_id",
+    "title": "Touch ID (fingerprint)",
+    "category": "security",
+    "pane": "com.apple.Touch-ID-Settings.extension*TouchIDPasswordPrefs",
+    "anchor": "TouchID",
+    "keywords": [
+      "fingerprint",
+      "touch id",
+      "unlock with finger",
+      "add fingerprint"
+    ],
+    "controlLabel": "Use Touch ID to unlock your Mac",
+    "steps": [
+      "Click 'Add Fingerprint' and follow the steps, resting your finger on the Touch ID button.",
+      "Make sure 'Use Touch ID to unlock your Mac' is on."
+    ]
+  },
+  {
+    "id": "change_password",
+    "title": "Change your login password",
+    "category": "security",
+    "pane": "com.apple.Touch-ID-Settings.extension*TouchIDPasswordPrefs",
+    "anchor": "Password",
+    "keywords": [
+      "change password",
+      "new password",
+      "login password"
+    ],
+    "steps": [
+      "Next to 'Login password', click 'Change…'.",
+      "Type your old password, then the new one twice."
+    ]
+  },
+  {
+    "id": "auto_login",
+    "title": "Log in automatically",
+    "category": "security",
+    "pane": "com.apple.Users-Groups-Settings.extension",
+    "keywords": [
+      "log in automatically",
+      "skip password at startup",
+      "automatic login"
+    ],
+    "controlLabel": "Automatically log in as",
+    "steps": [
+      "Click the 'Automatically log in as' menu and choose your name, or 'Off'."
+    ],
+    "caution": "With automatic login, anyone who turns on this Mac can use it without a password."
+  },
+  {
+    "id": "filevault",
+    "title": "FileVault (disk encryption)",
+    "category": "security",
+    "pane": "com.apple.settings.PrivacySecurity.extension",
+    "anchor": "FileVault",
+    "keywords": [
+      "filevault",
+      "encrypt disk",
+      "protect my files if stolen"
+    ],
+    "steps": [
+      "Scroll to 'FileVault' and click 'Turn On…'.",
+      "Write down the recovery key somewhere safe."
+    ],
+    "caution": "If you forget your password and lose the recovery key, your files can't be recovered."
+  },
+  {
+    "id": "location_services",
+    "title": "Location Services",
+    "category": "privacy",
+    "pane": "com.apple.settings.PrivacySecurity.extension",
+    "anchor": "Privacy_LocationServices",
+    "keywords": [
+      "location",
+      "gps",
+      "apps know where i am",
+      "location services"
+    ],
+    "controlLabel": "Location Services",
+    "steps": [
+      "Turn 'Location Services' on or off at the top.",
+      "Below, turn it on or off for each app."
+    ]
+  },
+  {
+    "id": "camera_access",
+    "title": "Which apps can use the camera",
+    "category": "privacy",
+    "pane": "com.apple.settings.PrivacySecurity.extension",
+    "anchor": "Privacy_Camera",
+    "keywords": [
+      "camera not working in zoom",
+      "camera access",
+      "webcam permission",
+      "camera blocked"
+    ],
+    "steps": [
+      "Find the app in the list, like Zoom or FaceTime.",
+      "Turn its switch on to let it use the camera. You may need to quit and reopen the app."
+    ]
+  },
+  {
+    "id": "microphone_access",
+    "title": "Which apps can use the microphone",
+    "category": "privacy",
+    "pane": "com.apple.settings.PrivacySecurity.extension",
+    "anchor": "Privacy_Microphone",
+    "keywords": [
+      "microphone not working",
+      "mic access",
+      "they can't hear me in zoom",
+      "microphone blocked"
+    ],
+    "steps": [
+      "Find the app in the list.",
+      "Turn its switch on to let it use the microphone. You may need to quit and reopen the app."
+    ]
+  },
+  {
+    "id": "screen_recording_access",
+    "title": "Screen sharing permission for apps",
+    "category": "privacy",
+    "pane": "com.apple.settings.PrivacySecurity.extension",
+    "anchor": "Privacy_ScreenCapture",
+    "keywords": [
+      "share my screen",
+      "screen recording permission",
+      "can't share screen in zoom"
+    ],
+    "steps": [
+      "Find the app in the list.",
+      "Turn its switch on. The app will usually ask to quit and reopen."
+    ]
+  },
+  {
+    "id": "accessibility_access",
+    "title": "Apps allowed to control the Mac",
+    "category": "privacy",
+    "pane": "com.apple.settings.PrivacySecurity.extension",
+    "anchor": "Privacy_Accessibility",
+    "keywords": [
+      "accessibility permission",
+      "allow app to control",
+      "ai buddy permission"
+    ],
+    "steps": [
+      "Find the app in the list, for example AI Buddy.",
+      "Turn its switch on. You may be asked for your password."
+    ]
+  },
+  {
+    "id": "software_update",
+    "title": "Software updates",
+    "category": "general",
+    "pane": "com.apple.Software-Update-Settings.extension",
+    "keywords": [
+      "update",
+      "upgrade macos",
+      "is my mac up to date",
+      "new version",
+      "security update"
+    ],
+    "steps": [
+      "Wait a moment while the Mac checks for updates.",
+      "If an update is listed, click 'Update Now' and keep the Mac plugged in."
+    ]
+  },
+  {
+    "id": "storage",
+    "title": "Storage (free up space)",
+    "category": "general",
+    "pane": "com.apple.settings.Storage",
+    "keywords": [
+      "disk full",
+      "storage",
+      "free up space",
+      "out of space",
+      "running out of room"
+    ],
+    "steps": [
+      "Wait for the colored bar to show what's using space.",
+      "Look through the recommendations and categories below to remove things you don't need."
+    ]
+  },
+  {
+    "id": "about_this_mac",
+    "title": "About this Mac",
+    "category": "general",
+    "pane": "com.apple.SystemProfiler.AboutExtension",
+    "keywords": [
+      "what mac do i have",
+      "macos version",
+      "about this mac",
+      "serial number",
+      "how much memory"
+    ],
+    "steps": [
+      "Your Mac's name, chip, memory and macOS version are listed here."
+    ]
+  },
+  {
+    "id": "date_time",
+    "title": "Date and time",
+    "category": "general",
+    "pane": "com.apple.Date-Time-Settings.extension",
+    "keywords": [
+      "wrong time",
+      "clock wrong",
+      "date wrong",
+      "set time"
+    ],
+    "controlLabel": "Set time and date automatically",
+    "steps": [
+      "Turn on 'Set time and date automatically' so the clock is always right."
+    ]
+  },
+  {
+    "id": "time_24h",
+    "title": "24-hour clock",
+    "category": "general",
+    "pane": "com.apple.Date-Time-Settings.extension",
+    "keywords": [
+      "24 hour time",
+      "am pm",
+      "military time"
+    ],
+    "controlLabel": "24-hour time",
+    "steps": [
+      "Turn '24-hour time' on or off."
+    ]
+  },
+  {
+    "id": "time_zone",
+    "title": "Time zone",
+    "category": "general",
+    "pane": "com.apple.Date-Time-Settings.extension",
+    "keywords": [
+      "time zone",
+      "wrong hour",
+      "travelling time"
+    ],
+    "controlLabel": "Set time zone automatically",
+    "steps": [
+      "Turn on 'Set time zone automatically using your current location', or pick a city below."
+    ]
+  },
+  {
+    "id": "language_region",
+    "title": "Language and region",
+    "category": "general",
+    "pane": "com.apple.Localization-Settings.extension",
+    "keywords": [
+      "language",
+      "region",
+      "change language",
+      "date format",
+      "temperature units",
+      "fahrenheit",
+      "celsius"
+    ],
+    "controlId": "region",
+    "controlLabel": "Region",
+    "steps": [
+      "Click '+' under 'Preferred Languages' to add a language, then drag it to the top.",
+      "Use 'Region', 'Date format' and the temperature buttons below for local formats."
+    ]
+  },
+  {
+    "id": "login_items",
+    "title": "Apps that open at startup",
+    "category": "general",
+    "pane": "com.apple.LoginItems-Settings.extension",
+    "anchor": "startupItemsPref",
+    "keywords": [
+      "apps open at startup",
+      "slow startup",
+      "login items",
+      "stop app opening automatically"
+    ],
+    "steps": [
+      "Under 'Open at Login', click an app and then the '–' button to stop it opening at startup."
+    ]
+  },
+  {
+    "id": "time_machine",
+    "title": "Time Machine backups",
+    "category": "general",
+    "pane": "com.apple.Time-Machine-Settings.extension",
+    "keywords": [
+      "backup",
+      "time machine",
+      "back up my files",
+      "restore files"
+    ],
+    "steps": [
+      "Plug in an external drive.",
+      "Click 'Add Backup Disk…' and choose the drive. Backups then happen automatically."
+    ]
+  },
+  {
+    "id": "notifications",
+    "title": "Notifications (pop-up messages)",
+    "category": "notifications",
+    "pane": "com.apple.Notifications-Settings.extension",
+    "keywords": [
+      "notifications",
+      "pop ups",
+      "alerts",
+      "too many messages",
+      "banners"
+    ],
+    "steps": [
+      "Scroll down to the list of apps and click the app that bothers you.",
+      "Turn off 'Allow notifications' to stop its pop-ups, or pick a quieter style."
+    ]
+  },
+  {
+    "id": "notification_previews",
+    "title": "Hide message previews",
+    "category": "notifications",
+    "pane": "com.apple.Notifications-Settings.extension",
+    "keywords": [
+      "message previews",
+      "people can read my messages",
+      "show previews"
+    ],
+    "controlId": "show-previews",
+    "controlLabel": "Show previews",
+    "steps": [
+      "Click the 'Show previews' menu and choose 'When Unlocked' or 'Never'."
+    ]
+  },
+  {
+    "id": "do_not_disturb",
+    "title": "Do Not Disturb / Focus",
+    "category": "notifications",
+    "pane": "com.apple.Focus-Settings.extension",
+    "keywords": [
+      "do not disturb",
+      "quiet",
+      "silence notifications",
+      "focus",
+      "stop interruptions"
+    ],
+    "steps": [
+      "Click 'Do Not Disturb'.",
+      "Add a schedule so it turns on by itself, for example overnight."
+    ]
+  },
+  {
+    "id": "siri",
+    "title": "Siri",
+    "category": "notifications",
+    "pane": "com.apple.Siri-Settings.extension*siri-sae",
+    "keywords": [
+      "siri",
+      "hey siri",
+      "voice assistant"
+    ],
+    "controlLabel": "Siri",
+    "steps": [
+      "Turn 'Siri' on.",
+      "Use 'Listen for' to choose whether saying 'Siri' wakes it up."
+    ]
+  },
+  {
+    "id": "screen_time_downtime",
+    "title": "Downtime (screen-free hours)",
+    "category": "notifications",
+    "pane": "com.apple.Screen-Time-Settings.extension",
+    "anchor": "path=downtime",
+    "keywords": [
+      "downtime",
+      "limit screen time",
+      "bedtime"
+    ],
+    "controlLabel": "Downtime",
+    "steps": [
+      "Turn on 'Downtime'.",
+      "Use 'Schedule' to choose the hours."
+    ]
+  },
+  {
+    "id": "battery_percentage",
+    "title": "Show battery percentage",
+    "category": "notifications",
+    "pane": "com.apple.ControlCenter-Settings.extension",
+    "anchor": "Battery",
+    "keywords": [
+      "battery percentage",
+      "how much battery left",
+      "battery icon"
+    ],
+    "steps": [
+      "Find 'Battery' in the list.",
+      "Turn on 'Show Percentage'."
+    ]
+  }
+]
