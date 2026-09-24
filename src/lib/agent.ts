@@ -211,6 +211,10 @@ export async function runAgent(
   const systemPrompt = buildSystemPrompt(memory, settingsQuery);
   const settingsRelevant = searchSettings(settingsQuery, 1).length > 0;
   let settingsOpened = false;
+  // For settings-like requests, don't stream the first round: when the model
+  // behaves it's only a (hidden) tool call anyway, and when it answers in prose
+  // instead, the nudge below replaces it — without it flashing on screen first.
+  const holdFirstRound = !resourceContext && searchSettings(userMessage, 1).length > 0;
   let nudged = false;
 
   const finalUserMessage = resourceContext
@@ -264,6 +268,7 @@ export async function runAgent(
           return;
         }
         buffer += event.payload.text;
+        if (round === 0 && holdFirstRound) return;
         const display = visibleText(buffer);
         if (display.length > emitted) {
           onToken(display.slice(emitted));

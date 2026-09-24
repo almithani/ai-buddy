@@ -73,6 +73,8 @@ pub fn load_model(
         .map_err(|e| format!("Failed to load model: {e}"))?;
 
     *state.0.lock().map_err(|e| e.to_string())? = Some(model);
+    // Catch up on a greeting whose rules changed while the model was unloaded.
+    crate::greeting::refresh_in_background(&app);
     Ok(())
 }
 

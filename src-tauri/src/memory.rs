@@ -82,22 +82,27 @@ pub fn get_setting_value(conn: &Connection, key: &str) -> Option<String> {
 
 #[tauri::command]
 pub fn store_preference(
+    app: tauri::AppHandle,
     rule: String,
     state: tauri::State<'_, DbState>,
 ) -> Result<MemoryItem, String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO memory (kind, value) VALUES ('rule', ?1)",
-        params![rule],
-    )
-    .map_err(|e| e.to_string())?;
-    let id = conn.last_insert_rowid();
-    conn.query_row(
-        "SELECT id, kind, key, value, created_at FROM memory WHERE id = ?1",
-        params![id],
-        row_to_item,
-    )
-    .map_err(|e| e.to_string())
+    let item = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO memory (kind, value) VALUES ('rule', ?1)",
+            params![rule],
+        )
+        .map_err(|e| e.to_string())?;
+        let id = conn.last_insert_rowid();
+        conn.query_row(
+            "SELECT id, kind, key, value, created_at FROM memory WHERE id = ?1",
+            params![id],
+            row_to_item,
+        )
+        .map_err(|e| e.to_string())?
+    };
+    crate::greeting::refresh_in_background(&app);
+    Ok(item)
 }
 
 #[tauri::command]
@@ -131,7 +136,10 @@ pub fn get_memory(state: tauri::State<'_, DbState>) -> Result<Vec<MemoryItem>, S
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
+            // `_`-prefixed settings are internal caches (e.g. `_greeting`):
+            // hidden from the Memory window and the agent's prompt.
             "SELECT id, kind, key, value, created_at FROM memory
+             WHERE key IS NULL OR key NOT LIKE '\\_%' ESCAPE '\\'
              ORDER BY kind = 'setting', created_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -144,9 +152,12 @@ pub fn get_memory(state: tauri::State<'_, DbState>) -> Result<Vec<MemoryItem>, S
 }
 
 #[tauri::command]
-pub fn delete_memory(id: i64, state: tauri::State<'_, DbState>) -> Result<(), String> {
-    let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM memory WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+pub fn delete_memory(app: tauri::AppHandle, id: i64, state: tauri::State<'_, DbState>) -> Result<(), String> {
+    {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM memory WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+    }
+    crate::greeting::refresh_in_background(&app);
     Ok(())
 }

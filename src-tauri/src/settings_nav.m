@@ -202,8 +202,8 @@ int aibuddy_settings_find_control(const char *control_id, const char *control_la
     }
 }
 
-/// Current frame of the tracked control. Returns 0 (and stops tracking) once
-/// it is gone or off screen; the ring should then be hidden.
+/// Current frame of the tracked control; 0 when it can't be read right now
+/// (gone, or momentarily unavailable). The caller decides when to give up.
 int aibuddy_settings_tracked_frame(double *x, double *y, double *w, double *h) {
     @autoreleasepool {
         AXUIElementRef el = CopyTracked();
@@ -211,10 +211,7 @@ int aibuddy_settings_tracked_frame(double *x, double *y, double *w, double *h) {
         CGRect f;
         BOOL ok = FrameOf(el, &f);
         CFRelease(el);
-        if (!ok) {
-            SetTracked(NULL);
-            return 0;
-        }
+        if (!ok) return 0;
         *x = f.origin.x; *y = f.origin.y; *w = f.size.width; *h = f.size.height;
         return 1;
     }
@@ -255,4 +252,11 @@ void aibuddy_settings_quit(void) {
 /// keyboard focus stays in System Settings.
 void aibuddy_order_front_passive(void *ns_window) {
     [(__bridge NSWindow *)ns_window orderFrontRegardless];
+}
+
+/// Bundle id of the frontmost app, for diagnostics when the ring hides.
+void aibuddy_frontmost_bundle_id(char *buf, int len) {
+    @autoreleasepool {
+        CopyOut(NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier ?: @"(none)", buf, len);
+    }
 }

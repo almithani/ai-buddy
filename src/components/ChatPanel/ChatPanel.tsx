@@ -30,6 +30,8 @@ interface Resource {
 let nextId = 1;
 
 // Shown when the user pastes substantial text or activates over a highlight.
+const GREETING = "What can I help you with?";
+
 const SUMMARIZE_OR_EDIT_OFFER =
   "I see your text — want me to **summarize** or **edit** it?";
 
@@ -60,47 +62,12 @@ export default function ChatPanel() {
     setMessages((m) => [...m, { id: nextId++, role: "buddy", text }]);
   }
 
-  // Generates a greeting via the LLM (respects stored preferences).
-  // Falls back to a hardcoded string if the model isn't loaded yet.
-  async function streamGreeting(prompt: string) {
-    const isLoaded = await invoke<boolean>("is_model_loaded").catch(() => false);
-    const buddyId = nextId++;
-    streamingIdRef.current = buddyId;
-
-    if (!isLoaded) {
-      setMessages([{ id: buddyId, role: "buddy", text: "Hi! What can I help you with?", streaming: false }]);
-      streamingIdRef.current = null;
-      return;
-    }
-
-    setMessages([{ id: buddyId, role: "buddy", text: "", streaming: true }]);
-    try {
-      const finalText = await runAgent(prompt, [], {
-        onToken: (token) => {
-          setMessages((m) =>
-            m.map((msg) => msg.id === buddyId ? { ...msg, text: msg.text + token } : msg)
-          );
-        },
-        onStatus: () => {},
-        onDroidState: () => {},
-        onReplace: (text) => {
-          setMessages((m) =>
-            m.map((msg) => msg.id === buddyId ? { ...msg, text } : msg)
-          );
-        },
-      });
-      setMessages((m) =>
-        m.map((msg) => msg.id === buddyId ? { ...msg, text: finalText, streaming: false } : msg)
-      );
-    } catch {
-      setMessages((m) =>
-        m.map((msg) =>
-          msg.id === buddyId ? { ...msg, text: "Hi! What can I help you with?", streaming: false } : msg
-        )
-      );
-    } finally {
-      streamingIdRef.current = null;
-    }
+  // Shown instantly: the personalised greeting is generated in the background
+  // whenever the user's rules change and cached in Rust (`greeting.rs`);
+  // GREETING is the fallback when there are no rules or the cache is stale.
+  async function showGreeting() {
+    const cached = await invoke<string | null>("get_greeting").catch(() => null);
+    setMessages([{ id: nextId++, role: "buddy", text: cached ?? GREETING }]);
   }
 
   // Check AX permission on mount. If missing, poll every 2 s until granted,
@@ -110,7 +77,7 @@ export default function ChatPanel() {
 
     invoke<boolean>("check_accessibility_permission").then((trusted) => {
       if (trusted) {
-        streamGreeting("Greet the user. Keep it to one sentence.");
+        showGreeting();
       } else {
         setMessages([{
           id: nextId++,
@@ -123,7 +90,7 @@ export default function ChatPanel() {
           if (nowTrusted) {
             clearInterval(pollInterval!);
             pollInterval = null;
-            streamGreeting("Greet the user. Keep it to one sentence.");
+            showGreeting();
           }
         }, 2000);
       }
@@ -258,7 +225,7 @@ export default function ChatPanel() {
         // Highlighted text captured → offer summarize/edit (instant, no LLM).
         injectBuddy(SUMMARIZE_OR_EDIT_OFFER);
       } else {
-        await streamGreeting("Greet the user briefly and let them know you're ready to help.");
+        showGreeting();
       }
       setTimeout(() => inputRef.current?.focus(), 50);
     });

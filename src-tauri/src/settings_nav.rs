@@ -100,11 +100,13 @@ mod mac {
         fn aibuddy_settings_ring_context_active() -> i32;
         fn aibuddy_settings_quit();
         fn aibuddy_order_front_passive(ns_window: *mut c_void);
+        fn aibuddy_frontmost_bundle_id(buf: *mut c_char, len: i32);
     }
 
     const RING_PAD: f64 = 10.0;
     const RING_LIFETIME: Duration = Duration::from_secs(20);
     const RING_TICK: Duration = Duration::from_millis(250);
+    const RING_GRACE_TICKS: u32 = 3;
 
     /// Bumped on every open so an older ring ticker stops when a new topic opens.
     static RING_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -206,6 +208,7 @@ mod mac {
 
         let was_running = unsafe { aibuddy_settings_is_running() } == 1;
         let has_control = !control_id.is_empty() || !control_label.is_empty();
+        eprintln!("[settings_nav] ring #{generation}: open {url} (System Settings already running: {was_running})");
 
         // Deep links don't navigate away from some sub-pages (e.g. Text Size), so
         // an already-open System Settings may ignore the link. A fresh launch
@@ -220,14 +223,17 @@ mod mac {
 
         let mut hit = find(control_id, control_label, 4000);
         if hit.is_none() && was_running {
+            eprintln!("[settings_nav] ring #{generation}: not found on open page, relaunching System Settings");
             unsafe { aibuddy_settings_quit() };
             open_url(url)?;
             hit = find(control_id, control_label, 5000);
         }
         let Some((state, rect)) = hit else {
+            eprintln!("[settings_nav] ring #{generation}: control not found, no ring");
             return Ok(OpenResult { found: false, state: String::new() });
         };
 
+        eprintln!("[settings_nav] ring #{generation}: showing at {rect:?}, state \"{state}\"");
         show_ring(app, rect);
         let app2 = app.clone();
         std::thread::spawn(move || track_ring(app2, generation));
@@ -256,21 +262,37 @@ mod mac {
 
     /// Keeps the ring on the control while it scrolls/moves; hides it after
     /// RING_LIFETIME, when the control disappears (page changed), when the user
-    /// switches to another app, or when a newer topic is opened.
+    /// switches to another app, or when a newer topic is opened. A condition must
+    /// hold for RING_GRACE_TICKS in a row before hiding, so a single bad reading
+    /// (e.g. mid app-switch) doesn't remove the ring.
     fn track_ring(app: AppHandle, generation: u64) {
         let started = Instant::now();
         let mut last: Option<Rect> = None;
-        loop {
+        let mut misses = 0;
+        let reason = loop {
             std::thread::sleep(RING_TICK);
             if RING_GENERATION.load(Ordering::SeqCst) != generation {
+                eprintln!("[settings_nav] ring #{generation}: superseded by a newer request");
                 return;
+            }
+            if started.elapsed() > RING_LIFETIME {
+                break "lifetime reached".to_string();
             }
             let active = unsafe { aibuddy_settings_ring_context_active() } == 1;
             let (mut x, mut y, mut w, mut h) = (0.0, 0.0, 0.0, 0.0);
             let visible = unsafe { aibuddy_settings_tracked_frame(&mut x, &mut y, &mut w, &mut h) } == 1;
-            if !active || !visible || started.elapsed() > RING_LIFETIME {
-                break;
+            if !active || !visible {
+                misses += 1;
+                if misses >= RING_GRACE_TICKS {
+                    break if !active {
+                        format!("another app is frontmost ({})", frontmost_bundle_id())
+                    } else {
+                        "control no longer on screen".to_string()
+                    };
+                }
+                continue;
             }
+            misses = 0;
             if last != Some((x, y, w, h)) {
                 if let Some(win) = app.get_webview_window("highlight") {
                     let _ = win.set_position(tauri::LogicalPosition::new(x - RING_PAD, y - RING_PAD));
@@ -278,10 +300,19 @@ mod mac {
                 }
                 last = Some((x, y, w, h));
             }
-        }
+        };
         if RING_GENERATION.load(Ordering::SeqCst) == generation {
+            eprintln!("[settings_nav] ring #{generation}: hidden — {reason}");
             hide_ring(&app);
             unsafe { aibuddy_settings_stop_tracking() };
+        }
+    }
+
+    fn frontmost_bundle_id() -> String {
+        let mut buf = [0 as c_char; 256];
+        unsafe {
+            aibuddy_frontmost_bundle_id(buf.as_mut_ptr(), buf.len() as i32);
+            CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
         }
     }
 }

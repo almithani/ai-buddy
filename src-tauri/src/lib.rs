@@ -3,6 +3,7 @@ use tauri::{Emitter, Manager};
 mod accessibility;
 mod diarization;
 mod download;
+mod greeting;
 mod llm;
 mod memory;
 mod settings_nav;
@@ -349,6 +350,7 @@ pub fn run() {
             reveal_in_finder,
             // Memory
             memory::store_preference,
+            greeting::get_greeting,
             memory::get_setting,
             memory::set_setting,
             memory::get_memory,
