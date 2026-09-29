@@ -17,6 +17,12 @@ export function describeMemory(item: MemoryItem): string {
       return item.value === "false"
         ? "Omit the time from transcript filenames"
         : "Include the time in transcript filenames";
+    case "speak_replies":
+      return item.value === "always"
+        ? "Read every answer out loud"
+        : item.value === "never"
+          ? "Never read answers out loud"
+          : "Read answers out loud when asked by voice";
     default:
       return `${item.key} = ${item.value}`;
   }

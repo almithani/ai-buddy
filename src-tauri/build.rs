@@ -5,6 +5,8 @@ fn main() {
     if target_os == "macos" {
         println!("cargo:rerun-if-changed=src/capture.m");
         println!("cargo:rerun-if-changed=src/settings_nav.m");
+        println!("cargo:rerun-if-changed=src/display_prefs.m");
+        println!("cargo:rerun-if-changed=src/voice.m");
         println!("cargo:rustc-link-lib=framework=ScreenCaptureKit");
         println!("cargo:rustc-link-lib=framework=CoreMedia");
         println!("cargo:rustc-link-lib=framework=AVFoundation");
@@ -13,6 +15,8 @@ fn main() {
         cc::Build::new()
             .file("src/capture.m")
             .file("src/settings_nav.m")
+            .file("src/display_prefs.m")
+            .file("src/voice.m")
             .flag("-fobjc-arc")
             .compile("aibuddy_capture");
 

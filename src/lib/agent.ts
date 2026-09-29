@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { MemoryItem, describeMemory } from "./memory";
 import { findSettingsTopic, formatTopicList, searchSettings } from "./settingsGuide";
+import { findHowto, searchHowtos } from "./howtoGuide";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,17 +37,22 @@ Available tools:
 - get_memory                 — List everything you remember about the user (preferences and settings)
 - set_transcript_settings    — Change where meeting transcripts are auto-saved or their filename format. Args (each optional): {"directory": "~/Desktop", "include_time": "true" or "false"}. Use when the user asks to change where transcripts/meeting minutes are stored, or to include/omit the time in transcript filenames.
 - open_settings              — Open the right System Settings page on the user's Mac and get the steps to walk them through it. Args: {"topic": "<id>"}, using an id from "Mac settings that may be relevant" below.
+- show_howto                 — Get step-by-step help for an everyday Mac task (screenshots, files, email, calls, printing, …) and open the app it's about. Args: {"topic": "<id>"}, using an id from "How-to guides that may be relevant" below.
+- set_voice_settings         — Change whether answers are read out loud. Args: {"speak_replies": "voice" (only when they asked by talking — the default), "always", or "never"}. Use when they say things like "always read your answers out loud" or "stop talking".
 - get_mac_info               — Check the Mac's macOS version, battery level, Wi-Fi on/off and sound volume/mute. No args. Use it first when the user asks about these, or when troubleshooting "no sound" / "no internet".
+
+Helping with everyday tasks:
+- For "how do I…" questions about using the Mac (taking a screenshot, finding a file, attaching a photo, a frozen app, …), call show_howto with the closest topic. Use open_settings instead when they want to change a setting.
+- Give the keyboard shortcut if there is one, plus at most 3 short steps. Don't restate every step from the result.
 
 Helping with Mac settings (many users are seniors):
 - When the user wants to change how their Mac looks, sounds, reads aloud or connects (text size, screen reader, captions, Wi-Fi, Bluetooth, volume, ...), call open_settings with the closest topic. Never make up a topic that isn't listed; if nothing fits, say kindly that you can't help with that setting yet.
 - Call open_settings EVERY time the user asks about a setting — even one you helped with earlier in this chat. They may have closed the window, and the setting may have changed.
 - Only mention an orange circle or how a setting is right now if the open_settings result for THIS request says so. Never repeat those from earlier replies.
-- After it opens, explain the returned steps in short, warm, plain sentences. No jargon. Put the words they will see on screen in quotes, like 'Text size'.
+- After it opens, give at most 3 short steps in plain words. No jargon. Put the words they will see on screen in quotes, like 'Text size'.
 - If the result includes a caution, tell the user before anything else.
 - If the result says how the setting is right now and it is already the way the user wants, tell them it's already set and skip the steps.
 - If the result mentions an orange circle, tell the user to look for it — it's easier than describing where to click.
-- End by inviting them to tell you when they're done or stuck.
 
 Editing the user's selected text:
 - To replace it in place, output the COMPLETE edited text between <replace> and </replace> tags.
@@ -60,11 +66,20 @@ Second paragraph.
 
 Rules:
 - The user's selected text is shown in the conversation above — use it as the input for edits.
-- If the user asks to summarize attached/selected/pasted text, write the summary directly in your reply as concise markdown bullet points.
+- If the user asks to summarize attached/selected/pasted text, write the summary directly in your reply as at most 5 short markdown bullet points.
 - After editing, confirm briefly in plain language. No markdown.
 - If a file attachment contains "[Image file", respond only with: "Image input is not supported yet." Do not attempt to read or describe the image.
 - If the user states a general preference ("from now on...", "always..."), call store_preference.
 `.trim();
+
+// Placed at the very end of the system prompt: the small local model follows
+// the most recent, concrete instructions far better than an adjective ("concise")
+// at the top. Replies are also read aloud, where length hurts even more.
+const LENGTH_RULES = `
+How long to answer (important):
+- Keep every reply short: at most 3 short sentences, or at most 3 short steps. (Summaries of their text: up to 5 short bullets.)
+- No greeting or warm-up, don't repeat their question, and no closing summary or "let me know if…" line.
+- Only give more detail if they ask for it.`;
 
 function buildSystemPrompt(memory: MemoryItem[], settingsQuery: string): string {
   const rules = memory.filter((m) => m.kind === "rule");
@@ -84,7 +99,13 @@ function buildSystemPrompt(memory: MemoryItem[], settingsQuery: string): string 
       ? `\nMac settings that may be relevant (topic ids for open_settings):\n${formatTopicList(topics)}`
       : "";
 
-  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${ruleBlock}${settingBlock}${topicBlock}`;
+  const howtos = searchHowtos(settingsQuery);
+  const howtoBlock =
+    howtos.length > 0
+      ? `\nHow-to guides that may be relevant (topic ids for show_howto):\n${formatTopicList(howtos)}`
+      : "";
+
+  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${ruleBlock}${settingBlock}${topicBlock}${howtoBlock}\n${LENGTH_RULES}`;
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -152,6 +173,38 @@ async function executeTool(
       const steps = topic.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
       const caution = topic.caution ? `\nCaution: ${topic.caution}` : "";
       return `Opened System Settings → ${topic.title}.${state}${ring}${caution}\nSteps:\n${steps}`;
+    }
+    case "show_howto": {
+      const topic = findHowto(call.args.topic ?? "");
+      if (!topic) {
+        const near = searchHowtos(call.args.topic ?? "", 5);
+        return near.length > 0
+          ? `Unknown topic "${call.args.topic ?? ""}". Closest topics:\n${formatTopicList(near)}`
+          : `No how-to guide matches "${call.args.topic ?? ""}".`;
+      }
+      let opened = "";
+      if (topic.app) {
+        opened = await invoke<boolean>("open_howto_app", { topic: topic.id })
+          .then((ok) => (ok ? "\nI've opened the app for them." : ""))
+          .catch((e) => `\nCouldn't open the app: ${e}.`);
+      }
+      const steps = topic.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+      const shortcut = topic.shortcut ? `\nKeyboard shortcut: ${topic.shortcut}.` : "";
+      const related = topic.settingsTopic
+        ? `\nRelated setting (use open_settings if they want it): ${topic.settingsTopic}.`
+        : "";
+      return `How to: ${topic.title}.${opened}${shortcut}\nSteps:\n${steps}${related}`;
+    }
+    case "set_voice_settings": {
+      const v = String(call.args.speak_replies ?? "").toLowerCase();
+      if (!["voice", "always", "never"].includes(v)) return `speak_replies must be "voice", "always" or "never".`;
+      await invoke("set_setting", { key: "speak_replies", value: v });
+      if (v === "never") await invoke("stop_speaking").catch(() => null);
+      return v === "always"
+        ? "I'll read every answer out loud."
+        : v === "never"
+          ? "I won't read answers out loud."
+          : "I'll read answers out loud when they ask by talking.";
     }
     case "get_mac_info":
       return await invoke<string>("get_mac_info").catch((e) => `Could not read Mac info: ${e}`);

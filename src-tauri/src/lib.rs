@@ -2,13 +2,16 @@ use tauri::{Emitter, Manager};
 
 mod accessibility;
 mod diarization;
+mod display_prefs;
 mod download;
 mod greeting;
+mod howto;
 mod llm;
 mod memory;
 mod settings_nav;
 mod speech_assets;
 mod transcription;
+mod voice;
 
 use memory::DbState;
 use llm::LlmState;
@@ -266,7 +269,12 @@ pub fn run() {
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_shortcut("Alt+Space")?
                         .with_handler(|app, _shortcut, event| {
-                            if event.state() == ShortcutState::Pressed {
+                            // Holding ⌥Space talks to the buddy (voice.rs); the
+                            // press itself still opens the chat as before.
+                            if event.state() == ShortcutState::Released {
+                                voice::key_up();
+                            }
+                            if event.state() == ShortcutState::Pressed && voice::key_down(app) {
                                 let prev = app.state::<PrevApp>();
                                 let pending = app.state::<PendingText>();
 
@@ -287,6 +295,11 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // --- Follow macOS text size / contrast / transparency / motion ---
+            display_prefs::start_watching(app.handle());
+            // --- Hold-to-talk: prepare a speech lane so the first hold starts fast ---
+            voice::prewarm();
 
             // --- Window routing ---
             let is_onboarded = data_dir.join("onboarding_complete").exists();
@@ -351,6 +364,11 @@ pub fn run() {
             // Memory
             memory::store_preference,
             greeting::get_greeting,
+            display_prefs::get_display_prefs,
+            howto::open_howto_app,
+            voice::set_voice_blocked,
+            voice::speak_text,
+            voice::stop_speaking,
             memory::get_setting,
             memory::set_setting,
             memory::get_memory,

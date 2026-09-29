@@ -29,9 +29,22 @@ interface Resource {
 
 let nextId = 1;
 
-// Shown when the user pastes substantial text or activates over a highlight.
 const GREETING = "What can I help you with?";
 
+// Replies are markdown; strip the syntax so it isn't read aloud as symbols.
+function plainForSpeech(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`#>]+/g, "")
+    .replace(/^\s*[-•]\s+/gm, "")
+    // Line breaks (e.g. between bullet points) become pauses when read aloud.
+    .replace(/([^.!?:\s])[ \t]*\n+/g, "$1. ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Shown when the user pastes substantial text or activates over a highlight.
 const SUMMARIZE_OR_EDIT_OFFER =
   "I see your text — want me to **summarize** or **edit** it?";
 
@@ -48,6 +61,11 @@ export default function ChatPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingIdRef = useRef<number | null>(null);
+  const [listening, setListening] = useState(false);
+  const [heard, setHeard] = useState("");
+  // Voice events are subscribed once; this ref always points at the latest
+  // handleSend so it sees current resources/busy state.
+  const sendRef = useRef<(spokenText?: string) => void>(() => {});
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -220,7 +238,9 @@ export default function ChatPanel() {
           : []
       );
       setInput("");
-      setBusy(false);
+      // Keep `busy` while a reply is still streaming, so holding ⌥Space
+      // mid-answer doesn't start listening (voice.rs checks set_voice_blocked).
+      if (streamingIdRef.current === null) setBusy(false);
       if (text) {
         // Highlighted text captured → offer summarize/edit (instant, no LLM).
         injectBuddy(SUMMARIZE_OR_EDIT_OFFER);
@@ -230,6 +250,49 @@ export default function ChatPanel() {
       setTimeout(() => inputRef.current?.focus(), 50);
     });
     return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
+  sendRef.current = handleSend;
+
+  useEffect(() => {
+    invoke("set_voice_blocked", { blocked: busy }).catch(() => null);
+  }, [busy]);
+
+  // Hold-to-talk: voice.rs emits these while ⌥Space is held / released.
+  useEffect(() => {
+    const unlisteners = [
+      // The mic starts on key-down, so words may already have been heard by
+      // the time the hold is confirmed — keep them.
+      listen("voice-listening", () => setListening(true)),
+      listen("voice-cancelled", () => {
+        setListening(false);
+        setHeard("");
+      }),
+      listen<{ text: string }>("voice-partial", (e) => setHeard(e.payload.text)),
+      listen<{ text: string }>("voice-result", (e) => {
+        setListening(false);
+        setHeard("");
+        const text = e.payload.text.trim();
+        if (text) sendRef.current(text);
+        else injectBuddy("I didn't catch that — hold ⌥Space while you talk, then let go.");
+      }),
+      listen<{ reason: string }>("voice-unavailable", (e) => {
+        setListening(false);
+        if (e.payload.reason === "assets") {
+          invoke("install_speech_assets").catch(() => null);
+          injectBuddy("I'm downloading voice support (one time only). Try holding ⌥Space again in a minute.");
+        } else if (e.payload.reason === "mic") {
+          injectBuddy("I can't hear you — AI Buddy isn't allowed to use the microphone. Turn it on in **System Settings → Privacy & Security → Microphone**, then try again.");
+        } else {
+          injectBuddy("Talking to me needs macOS 26 or newer. You can still type your question.");
+        }
+      }),
+      listen("voice-blocked", () => {
+        setStatus("Still answering — one moment…");
+        setTimeout(() => setStatus(""), 2500);
+      }),
+    ];
+    return () => { unlisteners.forEach((u) => u.then((fn) => fn())); };
   }, []);
 
   async function handleClose() {
@@ -278,11 +341,14 @@ export default function ChatPanel() {
     setResources((r) => r.filter((res) => res.id !== id));
   }
 
-  async function handleSend() {
-    const text = input.trim();
+  // `spokenText` comes from hold-to-talk (⌥Space); otherwise the typed input.
+  async function handleSend(spokenText?: string) {
+    const spoken = spokenText !== undefined;
+    const text = (spokenText ?? input).trim();
     if (!text || busy) return;
 
-    setInput("");
+    invoke("stop_speaking").catch(() => null);
+    if (!spoken) setInput("");
     setBusy(true);
 
     const capturedResources = resources;
@@ -354,6 +420,11 @@ export default function ChatPanel() {
           msg.id === buddyId ? { ...msg, text: finalText, streaming: false } : msg
         )
       );
+
+      const speakReplies = await invoke<string | null>("get_setting", { key: "speak_replies" }).catch(() => null);
+      if (speakReplies === "always" || (spoken && speakReplies !== "never")) {
+        invoke("speak_text", { text: plainForSpeech(finalText) }).catch(() => null);
+      }
     } catch (err) {
       setMessages((m) =>
         m.map((msg) =>
@@ -451,9 +522,9 @@ export default function ChatPanel() {
     setDragging(false);
   }
 
-  const isThinking = droidState === "thinking" && !messages.find(
-    (m) => m.id === streamingIdRef.current && m.text.length > 0
-  );
+  // One waiting indicator (the typing dots) until the first words arrive —
+  // including while a tool runs (opening settings, a guide) between rounds.
+  const isThinking = messages.some((m) => m.streaming && m.text.length === 0);
 
   return (
     <div
@@ -498,7 +569,7 @@ export default function ChatPanel() {
       ) : (
       <>
       <div className="chat-messages">
-        {messages.map((msg) => (
+        {messages.filter((msg) => !(msg.streaming && msg.text.length === 0)).map((msg) => (
           <div key={msg.id} className={`chat-msg chat-msg-${msg.role}`}>
             <div className={`chat-msg-bubble ${msg.streaming ? "chat-msg-streaming" : ""}`}>
               {msg.role === "buddy" ? (
@@ -531,9 +602,6 @@ export default function ChatPanel() {
                 </ReactMarkdown>
               ) : (
                 msg.text
-              )}
-              {msg.streaming && msg.text.length === 0 && (
-                <span className="chat-cursor" />
               )}
             </div>
           </div>
@@ -568,6 +636,16 @@ export default function ChatPanel() {
         </div>
       )}
 
+      {listening && (
+        <div className="chat-listening" role="status">
+          <span className="chat-listening-dot" />
+          <div>
+            <div className="chat-listening-title">Listening… let go of ⌥Space to send</div>
+            {heard && <div className="chat-listening-text">{heard}</div>}
+          </div>
+        </div>
+      )}
+
       <div className="chat-input-row">
         <textarea
           ref={inputRef}
@@ -576,13 +654,14 @@ export default function ChatPanel() {
           value={input}
           rows={1}
           disabled={busy}
-          onChange={(e) => setInput(e.target.value)}
+          readOnly={listening}
+          onChange={(e) => setInput(e.target.value.replace(/\u00a0/g, ""))}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
         />
         <button
           className="chat-send-btn"
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={!input.trim() || busy}
           title="Send"
         >

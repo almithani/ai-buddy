@@ -1,207 +1,6 @@
 {
   "macos": "26.6.2",
   "panes": {
-    "com.apple.Touch-ID-Settings.extension*TouchIDPasswordPrefs": [
-      "Password",
-      "TouchID",
-      "Watch"
-    ],
-    "com.apple.Siri-Settings.extension*siri-sae": [
-      "GenerativeAssistantSettingsView",
-      "Siri"
-    ],
-    "com.apple.Battery-Settings.extension*BatteryPreferences": [
-      "batteryhealth",
-      "currentSource",
-      "options"
-    ],
-    "com.apple.Keyboard-Settings.extension": [
-      "CapsLockInputSources",
-      "CustomizeModifierKeys",
-      "Dictation",
-      "FunctionKeys",
-      "InputSources",
-      "Keyboard",
-      "LanguageInputMethods",
-      "ModifierKeys",
-      "Shortcuts",
-      "Spelling",
-      "Spotlight",
-      "TextReplacements",
-      "TouchBarSettings",
-      "UseSmartQuotes"
-    ],
-    "com.apple.Users-Groups-Settings.extension": [
-      "loginOptionsPref",
-      "passwordPref"
-    ],
-    "com.apple.Focus-Settings.extension": [
-      "Focus"
-    ],
-    "com.apple.Spotlight-Settings.extension": [
-      "privacy",
-      "searchResults"
-    ],
-    "com.apple.BluetoothSettings": [
-      "Main"
-    ],
-    "com.apple.Network-Settings.extension": [
-      "6to4",
-      "802.1X",
-      "Advanced Ethernet",
-      "Advanced Modem",
-      "Advanced VPN",
-      "Advanced Wi-Fi",
-      "Bluetooth",
-      "Bond",
-      "DNS",
-      "Ethernet",
-      "Firewall",
-      "Modem",
-      "Network",
-      "PPP",
-      "PPPoE",
-      "Proxies",
-      "TCP/IP",
-      "Thunderbolt",
-      "VLAN",
-      "VPN",
-      "VPN on Demand",
-      "VirtualInterfaces",
-      "WINS",
-      "WWAN"
-    ],
-    "com.apple.Wallpaper-Settings.extension": [
-      "ClockAppearance",
-      "ScreenSaver",
-      "Wallpaper"
-    ],
-    "com.apple.Trackpad-Settings.extension": [
-      "trackpadTab"
-    ],
-    "com.apple.Lock-Screen-Settings.extension": [
-      "DisplayOff",
-      "LargeClock",
-      "LockScreenMessage",
-      "LoginWindow",
-      "Password",
-      "ScreenSaver"
-    ],
-    "com.apple.Screen-Time-Settings.extension": [
-      "path=always-allowed",
-      "path=app-limits",
-      "path=app-usage",
-      "path=communication-limits",
-      "path=content-and-privacy",
-      "path=downtime",
-      "path=notifications",
-      "path=pickups",
-      "path=requests",
-      "path=screen-distance"
-    ],
-    "com.apple.Game-Center-Settings.extension": [
-      "GameCenterPane"
-    ],
-    "com.apple.systempreferences.AppleIDSettings:icloud": [
-      "AppleAccount",
-      "com.apple.AppleMediaServicesUI.SpyglassPurchases",
-      "iCloud"
-    ],
-    "com.apple.WalletSettingsExtension": [
-      "Wallet"
-    ],
-    "com.apple.Desktop-Settings.extension": [
-      "Applications",
-      "Desktop",
-      "Dock",
-      "HotCorners",
-      "MissionControl",
-      "Shortcuts",
-      "StageManager",
-      "Widgets",
-      "WindowTiling",
-      "Windows"
-    ],
-    "com.apple.Appearance-Settings.extension": [
-      "Main"
-    ],
-    "com.apple.settings.PrivacySecurity.extension": [
-      "Advanced",
-      "FileVault",
-      "Location_Access_Report",
-      "LockdownMode",
-      "Privacy_Accessibility",
-      "Privacy_Advertising",
-      "Privacy_AllFiles",
-      "Privacy_Analytics",
-      "Privacy_AppBundles",
-      "Privacy_AudioCapture",
-      "Privacy_Automation",
-      "Privacy_Bluetooth",
-      "Privacy_Calendars",
-      "Privacy_Camera",
-      "Privacy_Contacts",
-      "Privacy_DevTools",
-      "Privacy_FilesAndFolders",
-      "Privacy_Focus",
-      "Privacy_HomeKit",
-      "Privacy_ListenEvent",
-      "Privacy_LocationServices",
-      "Privacy_Media",
-      "Privacy_Microphone",
-      "Privacy_Motion",
-      "Privacy_NudityDetection",
-      "Privacy_PasskeyAccess",
-      "Privacy_Photos",
-      "Privacy_Reminders",
-      "Privacy_RemoteDesktop",
-      "Privacy_ScreenCapture",
-      "Privacy_SpeechRecognition",
-      "Privacy_SystemServices",
-      "Security",
-      "SecurityImprovements"
-    ],
-    "com.apple.Displays-Settings.extension": [
-      "advancedSection",
-      "ambienceSection",
-      "arrangementSection",
-      "characteristicSection",
-      "displaysSection",
-      "miscellaneousSection",
-      "nightShiftSection",
-      "profileSection",
-      "resolutionSection",
-      "sidecarSection"
-    ],
-    "com.apple.ControlCenter-Settings.extension": [
-      "Battery",
-      "Bluetooth",
-      "Clock",
-      "Display",
-      "DoNotDisturb",
-      "FocusModes",
-      "MenuBar",
-      "NowPlaying",
-      "ScreenMirroring",
-      "Siri",
-      "Sound",
-      "Spotlight",
-      "StageManager",
-      "TimeMachine",
-      "UserSwitcher",
-      "VPN",
-      "Weather",
-      "WiFi",
-      "tutorial"
-    ],
-    "com.apple.Sound-Settings.extension": [
-      "balance",
-      "effects",
-      "input",
-      "mute",
-      "output",
-      "volume"
-    ],
     "com.apple.systempreferences.GeneralSettings": [],
     "com.apple.SystemProfiler.AboutExtension": [
       "aboutSection",
@@ -262,15 +61,37 @@
     "com.apple.Profiles-Settings.extension": [
       "Main"
     ],
-    "com.apple.Notifications-Settings.extension": [
-      "Notifications",
-      "RemoteNotifications"
+    "com.apple.Siri-Settings.extension*siri-sae": [
+      "GenerativeAssistantSettingsView",
+      "Siri"
+    ],
+    "com.apple.Battery-Settings.extension*BatteryPreferences": [
+      "batteryhealth",
+      "currentSource",
+      "options"
+    ],
+    "com.apple.Touch-ID-Settings.extension*TouchIDPasswordPrefs": [
+      "Password",
+      "TouchID",
+      "Watch"
     ],
     "com.apple.Print-Scan-Settings.extension": [
       "fax",
       "print",
       "scan",
       "share"
+    ],
+    "com.apple.Users-Groups-Settings.extension": [
+      "loginOptionsPref",
+      "passwordPref"
+    ],
+    "com.apple.Sound-Settings.extension": [
+      "balance",
+      "effects",
+      "input",
+      "mute",
+      "output",
+      "volume"
     ],
     "com.apple.Internet-Accounts-Settings.extension": [
       "InternetAccounts",
@@ -281,6 +102,164 @@
       "com.apple.account.Yahoo",
       "com.apple.account.aol",
       "com.apple.account.qq"
+    ],
+    "com.apple.Wallpaper-Settings.extension": [
+      "ClockAppearance",
+      "ScreenSaver",
+      "Wallpaper"
+    ],
+    "com.apple.Displays-Settings.extension": [
+      "advancedSection",
+      "ambienceSection",
+      "arrangementSection",
+      "characteristicSection",
+      "displaysSection",
+      "miscellaneousSection",
+      "nightShiftSection",
+      "profileSection",
+      "resolutionSection",
+      "sidecarSection"
+    ],
+    "com.apple.settings.PrivacySecurity.extension": [
+      "Advanced",
+      "FileVault",
+      "Location_Access_Report",
+      "LockdownMode",
+      "Privacy_Accessibility",
+      "Privacy_Advertising",
+      "Privacy_AllFiles",
+      "Privacy_Analytics",
+      "Privacy_AppBundles",
+      "Privacy_AudioCapture",
+      "Privacy_Automation",
+      "Privacy_Bluetooth",
+      "Privacy_Calendars",
+      "Privacy_Camera",
+      "Privacy_Contacts",
+      "Privacy_DevTools",
+      "Privacy_FilesAndFolders",
+      "Privacy_Focus",
+      "Privacy_HomeKit",
+      "Privacy_ListenEvent",
+      "Privacy_LocationServices",
+      "Privacy_Media",
+      "Privacy_Microphone",
+      "Privacy_Motion",
+      "Privacy_NudityDetection",
+      "Privacy_PasskeyAccess",
+      "Privacy_Photos",
+      "Privacy_Reminders",
+      "Privacy_RemoteDesktop",
+      "Privacy_ScreenCapture",
+      "Privacy_SpeechRecognition",
+      "Privacy_SystemServices",
+      "Security",
+      "SecurityImprovements"
+    ],
+    "com.apple.Network-Settings.extension": [
+      "6to4",
+      "802.1X",
+      "Advanced Ethernet",
+      "Advanced Modem",
+      "Advanced VPN",
+      "Advanced Wi-Fi",
+      "Bluetooth",
+      "Bond",
+      "DNS",
+      "Ethernet",
+      "Firewall",
+      "Modem",
+      "Network",
+      "PPP",
+      "PPPoE",
+      "Proxies",
+      "TCP/IP",
+      "Thunderbolt",
+      "VLAN",
+      "VPN",
+      "VPN on Demand",
+      "VirtualInterfaces",
+      "WINS",
+      "WWAN"
+    ],
+    "com.apple.Keyboard-Settings.extension": [
+      "CapsLockInputSources",
+      "CustomizeModifierKeys",
+      "Dictation",
+      "FunctionKeys",
+      "InputSources",
+      "Keyboard",
+      "LanguageInputMethods",
+      "ModifierKeys",
+      "Shortcuts",
+      "Spelling",
+      "Spotlight",
+      "TextReplacements",
+      "TouchBarSettings",
+      "UseSmartQuotes"
+    ],
+    "com.apple.BluetoothSettings": [
+      "Main"
+    ],
+    "com.apple.Lock-Screen-Settings.extension": [
+      "DisplayOff",
+      "LargeClock",
+      "LockScreenMessage",
+      "LoginWindow",
+      "Password",
+      "ScreenSaver"
+    ],
+    "com.apple.Notifications-Settings.extension": [
+      "Notifications",
+      "RemoteNotifications"
+    ],
+    "com.apple.systempreferences.AppleIDSettings:icloud": [
+      "AppleAccount",
+      "com.apple.AppleMediaServicesUI.SpyglassPurchases",
+      "iCloud"
+    ],
+    "com.apple.Desktop-Settings.extension": [
+      "Applications",
+      "Desktop",
+      "Dock",
+      "HotCorners",
+      "MissionControl",
+      "Shortcuts",
+      "StageManager",
+      "Widgets",
+      "WindowTiling",
+      "Windows"
+    ],
+    "com.apple.Spotlight-Settings.extension": [
+      "privacy",
+      "searchResults"
+    ],
+    "com.apple.wifi-settings-extension": [
+      "Advanced",
+      "General_Details",
+      "General_Join",
+      "General_Main"
+    ],
+    "com.apple.Screen-Time-Settings.extension": [
+      "path=always-allowed",
+      "path=app-limits",
+      "path=app-usage",
+      "path=communication-limits",
+      "path=content-and-privacy",
+      "path=downtime",
+      "path=notifications",
+      "path=pickups",
+      "path=requests",
+      "path=screen-distance"
+    ],
+    "com.apple.WalletSettingsExtension": [
+      "Wallet"
+    ],
+    "com.apple.Focus-Settings.extension": [
+      "Focus"
+    ],
+    "com.apple.Game-Center-Settings.extension": [
+      "GameCenterPane"
     ],
     "com.apple.Accessibility-Settings.extension": [
       "AX_ADAPTIVE_VOICE_SHORTCUTS_ONBOARDING",
@@ -624,16 +603,32 @@
       "zoomHotkeyConfig",
       "zoomTempModifiersConfig"
     ],
-    "com.apple.wifi-settings-extension": [
-      "Advanced",
-      "General_Details",
-      "General_Join",
-      "General_Main"
+    "com.apple.Appearance-Settings.extension": [
+      "Main"
     ],
-    "com.apple.systempreferences.AppleIDSettings*AppleIDSettings": [
-      "AppleAccount",
-      "com.apple.AppleMediaServicesUI.SpyglassPurchases",
-      "iCloud"
+    "com.apple.ControlCenter-Settings.extension": [
+      "Battery",
+      "Bluetooth",
+      "Clock",
+      "Display",
+      "DoNotDisturb",
+      "FocusModes",
+      "MenuBar",
+      "NowPlaying",
+      "ScreenMirroring",
+      "Siri",
+      "Sound",
+      "Spotlight",
+      "StageManager",
+      "TimeMachine",
+      "UserSwitcher",
+      "VPN",
+      "Weather",
+      "WiFi",
+      "tutorial"
+    ],
+    "com.apple.Trackpad-Settings.extension": [
+      "trackpadTab"
     ],
     "io.macfuse.preferencepanes.macfuse": [],
     "com.apple.NetworkExtensionSettingsUI.NESettingsUIExtension*vpn": [
@@ -644,6 +639,11 @@
       "LocationSharing",
       "PurchaseSharing",
       "Subscriptions",
+      "iCloud"
+    ],
+    "com.apple.systempreferences.AppleIDSettings*AppleIDSettings": [
+      "AppleAccount",
+      "com.apple.AppleMediaServicesUI.SpyglassPurchases",
       "iCloud"
     ]
   }

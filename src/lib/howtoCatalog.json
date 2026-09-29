@@ -1,0 +1,767 @@
+[
+  {
+    "id": "screenshot",
+    "title": "Take a screenshot",
+    "category": "screen",
+    "keywords": [
+      "screenshot",
+      "screen shot",
+      "capture the screen",
+      "picture of my screen",
+      "print screen"
+    ],
+    "steps": [
+      "Press Shift-Command-5 to show the screenshot controls at the bottom of the screen.",
+      "Choose 'Capture Entire Screen', 'Capture Selected Window' or 'Capture Selected Portion'.",
+      "Click 'Capture'. The picture is saved to your Desktop."
+    ],
+    "shortcut": "Shift-Command-3 for the whole screen, Shift-Command-4 to drag around part of it",
+    "app": "com.apple.screenshot.launcher"
+  },
+  {
+    "id": "screen_recording",
+    "title": "Record a video of the screen",
+    "category": "screen",
+    "keywords": [
+      "record screen",
+      "screen recording",
+      "video of my screen"
+    ],
+    "steps": [
+      "Press Shift-Command-5.",
+      "Choose 'Record Entire Screen' or 'Record Selected Portion', then click 'Record'.",
+      "To stop, click the stop button in the menu bar at the top of the screen. The video is saved to your Desktop."
+    ],
+    "shortcut": "Shift-Command-5",
+    "app": "com.apple.screenshot.launcher"
+  },
+  {
+    "id": "find_file",
+    "title": "Find a lost file",
+    "category": "files",
+    "keywords": [
+      "find a file",
+      "lost file",
+      "where did my file go",
+      "search for document",
+      "can't find document"
+    ],
+    "steps": [
+      "Press Command-Space to open Spotlight search.",
+      "Type part of the file's name or a word inside it.",
+      "Use the arrow keys to pick it and press Return to open it."
+    ],
+    "shortcut": "Command-Space"
+  },
+  {
+    "id": "downloads",
+    "title": "Find something I downloaded",
+    "category": "files",
+    "keywords": [
+      "downloads",
+      "downloaded file",
+      "where do downloads go",
+      "find download"
+    ],
+    "steps": [
+      "Click the Finder icon (the blue face) in the Dock.",
+      "Click 'Downloads' in the list on the left.",
+      "Your newest downloads are usually at the top."
+    ],
+    "shortcut": "Option-Command-L in Finder",
+    "app": "com.apple.finder"
+  },
+  {
+    "id": "rename_file",
+    "title": "Rename a file",
+    "category": "files",
+    "keywords": [
+      "rename",
+      "change file name"
+    ],
+    "steps": [
+      "Click the file once to select it.",
+      "Press Return. The name becomes editable.",
+      "Type the new name and press Return again."
+    ]
+  },
+  {
+    "id": "new_folder",
+    "title": "Make a new folder",
+    "category": "files",
+    "keywords": [
+      "new folder",
+      "create folder",
+      "organize files"
+    ],
+    "steps": [
+      "Open Finder and go to where you want the folder.",
+      "Press Shift-Command-N.",
+      "Type a name for the folder and press Return."
+    ],
+    "shortcut": "Shift-Command-N",
+    "app": "com.apple.finder"
+  },
+  {
+    "id": "zip_files",
+    "title": "Zip or unzip files",
+    "category": "files",
+    "keywords": [
+      "zip",
+      "compress",
+      "unzip",
+      "open zip file",
+      "archive"
+    ],
+    "steps": [
+      "To zip: hold the Control key and click the file or folder, then choose 'Compress'.",
+      "To unzip: double-click the .zip file. The contents appear next to it."
+    ]
+  },
+  {
+    "id": "empty_trash",
+    "title": "Empty the Trash",
+    "category": "files",
+    "keywords": [
+      "empty trash",
+      "delete permanently",
+      "free up space trash"
+    ],
+    "steps": [
+      "Hold the Control key and click the Trash icon at the end of the Dock.",
+      "Choose 'Empty Trash', then confirm."
+    ],
+    "settingsTopic": "storage"
+  },
+  {
+    "id": "restore_from_trash",
+    "title": "Get something back from the Trash",
+    "category": "files",
+    "keywords": [
+      "undelete",
+      "restore deleted file",
+      "deleted by mistake",
+      "recover file"
+    ],
+    "steps": [
+      "Click the Trash icon at the end of the Dock.",
+      "Find the item, hold the Control key and click it.",
+      "Choose 'Put Back'. It returns to where it was."
+    ]
+  },
+  {
+    "id": "eject_drive",
+    "title": "Safely remove a USB drive",
+    "category": "files",
+    "keywords": [
+      "eject",
+      "usb stick",
+      "remove drive",
+      "unplug memory stick",
+      "external drive"
+    ],
+    "steps": [
+      "Open Finder.",
+      "In the list on the left, click the eject symbol (⏏) next to the drive's name.",
+      "When the drive disappears from the list, it's safe to unplug."
+    ],
+    "app": "com.apple.finder"
+  },
+  {
+    "id": "open_pdf_sign",
+    "title": "Open and sign a PDF",
+    "category": "files",
+    "keywords": [
+      "sign pdf",
+      "fill in form",
+      "open pdf",
+      "signature"
+    ],
+    "steps": [
+      "Double-click the PDF to open it in Preview.",
+      "Click the pen-tip 'Markup' button at the top, then the signature button.",
+      "Create a signature with your trackpad or camera, then click to place it."
+    ],
+    "app": "com.apple.Preview"
+  },
+  {
+    "id": "open_app",
+    "title": "Open an app",
+    "category": "apps",
+    "keywords": [
+      "open app",
+      "start program",
+      "launch application",
+      "find an app"
+    ],
+    "steps": [
+      "Press Command-Space, type the app's name and press Return.",
+      "Or click the 'Apps' icon in the Dock to see all your apps and click one."
+    ],
+    "shortcut": "Command-Space",
+    "app": "com.apple.apps.launcher"
+  },
+  {
+    "id": "quit_app",
+    "title": "Close a window vs quit an app",
+    "category": "apps",
+    "keywords": [
+      "quit app",
+      "close program",
+      "app still running",
+      "close window"
+    ],
+    "steps": [
+      "The red button at the top left of a window only closes that window.",
+      "To quit the whole app, press Command-Q, or choose Quit from the app's menu at the top left."
+    ],
+    "shortcut": "Command-Q to quit, Command-W to close a window"
+  },
+  {
+    "id": "force_quit",
+    "title": "Force-quit a frozen app",
+    "category": "apps",
+    "keywords": [
+      "frozen",
+      "not responding",
+      "stuck",
+      "spinning wheel",
+      "beach ball",
+      "force quit",
+      "app hangs"
+    ],
+    "steps": [
+      "Press Option-Command-Escape.",
+      "Click the app that isn't responding.",
+      "Click 'Force Quit'. Unsaved work in that app may be lost."
+    ],
+    "shortcut": "Option-Command-Escape"
+  },
+  {
+    "id": "switch_apps",
+    "title": "Switch between apps",
+    "category": "apps",
+    "keywords": [
+      "switch apps",
+      "go back to other program",
+      "change window"
+    ],
+    "steps": [
+      "Hold Command and press Tab. Keep holding Command and press Tab again to move along.",
+      "Let go when the app you want is highlighted."
+    ],
+    "shortcut": "Command-Tab"
+  },
+  {
+    "id": "exit_full_screen",
+    "title": "Get out of full screen",
+    "category": "apps",
+    "keywords": [
+      "full screen",
+      "exit full screen",
+      "window fills screen",
+      "menu bar gone"
+    ],
+    "steps": [
+      "Press the Escape key, or press Control-Command-F.",
+      "Or move the pointer to the top of the screen and click the green button at the top left."
+    ],
+    "shortcut": "Control-Command-F"
+  },
+  {
+    "id": "find_lost_window",
+    "title": "Find a window that disappeared",
+    "category": "apps",
+    "keywords": [
+      "lost window",
+      "window disappeared",
+      "minimized",
+      "can't find my window",
+      "hidden window"
+    ],
+    "steps": [
+      "Click the app's icon in the Dock — its windows come to the front.",
+      "If it was minimized, click its small picture at the right end of the Dock.",
+      "To see all open windows at once, press Control and the Up Arrow."
+    ],
+    "shortcut": "Control-Up Arrow"
+  },
+  {
+    "id": "delete_app",
+    "title": "Delete an app",
+    "category": "apps",
+    "keywords": [
+      "uninstall",
+      "delete app",
+      "remove program"
+    ],
+    "steps": [
+      "Open Finder and click 'Applications' on the left.",
+      "Drag the app onto the Trash in the Dock.",
+      "Empty the Trash to finish."
+    ],
+    "app": "com.apple.finder"
+  },
+  {
+    "id": "update_apps",
+    "title": "Update my apps",
+    "category": "apps",
+    "keywords": [
+      "update apps",
+      "app updates",
+      "app store updates"
+    ],
+    "steps": [
+      "Open the App Store.",
+      "Click 'Updates' in the list on the left.",
+      "Click 'Update All'."
+    ],
+    "app": "com.apple.AppStore",
+    "settingsTopic": "software_update"
+  },
+  {
+    "id": "copy_paste",
+    "title": "Copy and paste",
+    "category": "text",
+    "keywords": [
+      "copy",
+      "paste",
+      "cut",
+      "copy and paste",
+      "move text"
+    ],
+    "steps": [
+      "Select the text by dragging over it.",
+      "Press Command-C to copy (or Command-X to cut).",
+      "Click where you want it and press Command-V to paste."
+    ],
+    "shortcut": "Command-C, then Command-V"
+  },
+  {
+    "id": "undo",
+    "title": "Undo a mistake",
+    "category": "text",
+    "keywords": [
+      "undo",
+      "take back",
+      "oops",
+      "made a mistake",
+      "deleted text"
+    ],
+    "steps": [
+      "Press Command-Z right away to undo the last thing you did.",
+      "Press it again to undo more. Shift-Command-Z redoes."
+    ],
+    "shortcut": "Command-Z"
+  },
+  {
+    "id": "select_all",
+    "title": "Select everything",
+    "category": "text",
+    "keywords": [
+      "select all",
+      "highlight everything"
+    ],
+    "steps": [
+      "Click in the document or list, then press Command-A."
+    ],
+    "shortcut": "Command-A"
+  },
+  {
+    "id": "find_on_page",
+    "title": "Find a word on a page",
+    "category": "text",
+    "keywords": [
+      "find word",
+      "search page",
+      "find in document"
+    ],
+    "steps": [
+      "Press Command-F.",
+      "Type the word. Matches are highlighted; press Return to go to the next one."
+    ],
+    "shortcut": "Command-F"
+  },
+  {
+    "id": "emoji",
+    "title": "Type an emoji or symbol",
+    "category": "text",
+    "keywords": [
+      "emoji",
+      "smiley",
+      "symbols",
+      "special characters"
+    ],
+    "steps": [
+      "Click where you're typing.",
+      "Press the Globe key (fn) and E together, or Control-Command-Space.",
+      "Click an emoji to insert it."
+    ],
+    "shortcut": "Globe-E"
+  },
+  {
+    "id": "accents",
+    "title": "Type accented letters",
+    "category": "text",
+    "keywords": [
+      "accent",
+      "é",
+      "foreign letters",
+      "umlaut"
+    ],
+    "steps": [
+      "Hold down the letter key, for example E.",
+      "A small menu of accented letters appears; click one or press its number."
+    ]
+  },
+  {
+    "id": "save_document",
+    "title": "Save my work",
+    "category": "text",
+    "keywords": [
+      "save",
+      "save document",
+      "save file"
+    ],
+    "steps": [
+      "Press Command-S.",
+      "The first time, type a name, pick a place like 'Documents', and click 'Save'."
+    ],
+    "shortcut": "Command-S"
+  },
+  {
+    "id": "spell_check",
+    "title": "Fix a spelling mistake",
+    "category": "text",
+    "keywords": [
+      "spelling",
+      "red underline",
+      "spell check"
+    ],
+    "steps": [
+      "Hold the Control key and click the underlined word.",
+      "Choose the right spelling at the top of the menu."
+    ]
+  },
+  {
+    "id": "email_attach",
+    "title": "Attach a photo or file to an email",
+    "category": "email",
+    "keywords": [
+      "attach",
+      "attachment",
+      "send photo by email",
+      "add picture to email"
+    ],
+    "steps": [
+      "In Mail, start a new message with Command-N.",
+      "Click the paperclip button at the top of the message.",
+      "Pick the photo or file and click 'Choose File'. You can also drag it into the message."
+    ],
+    "app": "com.apple.mail"
+  },
+  {
+    "id": "email_reply",
+    "title": "Reply to an email",
+    "category": "email",
+    "keywords": [
+      "reply",
+      "answer email",
+      "respond to email"
+    ],
+    "steps": [
+      "Click the email you want to answer.",
+      "Click the curved arrow 'Reply' button at the top (or press Command-R).",
+      "Type your answer and click the paper-plane 'Send' button."
+    ],
+    "shortcut": "Command-R",
+    "app": "com.apple.mail"
+  },
+  {
+    "id": "email_new",
+    "title": "Write a new email",
+    "category": "email",
+    "keywords": [
+      "send email",
+      "new email",
+      "write email",
+      "compose"
+    ],
+    "steps": [
+      "In Mail, press Command-N.",
+      "Type the address in 'To', a subject, and your message.",
+      "Click the paper-plane 'Send' button."
+    ],
+    "shortcut": "Command-N",
+    "app": "com.apple.mail"
+  },
+  {
+    "id": "facetime_call",
+    "title": "Make a FaceTime video call",
+    "category": "calls",
+    "keywords": [
+      "facetime",
+      "video call",
+      "call my family",
+      "see grandchildren"
+    ],
+    "steps": [
+      "Open FaceTime.",
+      "Click 'New FaceTime' and type the person's name, phone number or email.",
+      "Click the green 'FaceTime' button."
+    ],
+    "app": "com.apple.FaceTime"
+  },
+  {
+    "id": "zoom_join",
+    "title": "Join a Zoom meeting",
+    "category": "calls",
+    "keywords": [
+      "zoom meeting",
+      "join zoom",
+      "zoom link",
+      "meeting id"
+    ],
+    "steps": [
+      "The easiest way: click the Zoom link in your invitation email.",
+      "Or open Zoom, click 'Join', and type the Meeting ID and passcode.",
+      "Click 'Join with Computer Audio' so they can hear you."
+    ],
+    "app": "us.zoom.xos",
+    "settingsTopic": "camera_access"
+  },
+  {
+    "id": "import_iphone_photos",
+    "title": "Copy photos from my iPhone",
+    "category": "photos",
+    "keywords": [
+      "import photos",
+      "photos from phone",
+      "iphone pictures to mac",
+      "transfer photos"
+    ],
+    "steps": [
+      "Connect your iPhone with its cable, unlock it and tap 'Trust' if asked.",
+      "In Photos, click your iPhone in the list on the left.",
+      "Click 'Import All New Items'."
+    ],
+    "app": "com.apple.Photos"
+  },
+  {
+    "id": "airdrop_receive",
+    "title": "Send a photo from my iPhone with AirDrop",
+    "category": "photos",
+    "keywords": [
+      "airdrop from iphone",
+      "send photo to mac",
+      "share to mac"
+    ],
+    "steps": [
+      "On the iPhone, open the photo and tap the Share button.",
+      "Tap 'AirDrop' and choose your Mac.",
+      "On the Mac, the photo appears in your Downloads folder."
+    ],
+    "settingsTopic": "airdrop"
+  },
+  {
+    "id": "save_web_image",
+    "title": "Save a picture from a website",
+    "category": "photos",
+    "keywords": [
+      "save picture",
+      "download image",
+      "save photo from internet"
+    ],
+    "steps": [
+      "Hold the Control key and click the picture.",
+      "Choose 'Save Image to \"Downloads\"'."
+    ]
+  },
+  {
+    "id": "photo_booth",
+    "title": "Take a photo of myself",
+    "category": "photos",
+    "keywords": [
+      "selfie",
+      "take my picture",
+      "photo with camera",
+      "webcam photo"
+    ],
+    "steps": [
+      "Open Photo Booth.",
+      "Click the red camera button. After a short countdown the photo is taken."
+    ],
+    "app": "com.apple.PhotoBooth"
+  },
+  {
+    "id": "web_zoom",
+    "title": "Make a web page bigger",
+    "category": "web",
+    "keywords": [
+      "web page too small",
+      "zoom web page",
+      "bigger website",
+      "text on website small"
+    ],
+    "steps": [
+      "Press Command and the plus key (+) to make the page bigger.",
+      "Press Command and minus (-) to make it smaller, or Command-0 to reset."
+    ],
+    "shortcut": "Command-Plus",
+    "settingsTopic": "text_size"
+  },
+  {
+    "id": "bookmark",
+    "title": "Save a website to come back to",
+    "category": "web",
+    "keywords": [
+      "bookmark",
+      "favorite website",
+      "save website"
+    ],
+    "steps": [
+      "While on the page in Safari, press Command-D.",
+      "Choose where to save it and click 'Add'."
+    ],
+    "shortcut": "Command-D",
+    "app": "com.apple.Safari"
+  },
+  {
+    "id": "private_window",
+    "title": "Browse privately",
+    "category": "web",
+    "keywords": [
+      "private browsing",
+      "incognito",
+      "don't save history"
+    ],
+    "steps": [
+      "In Safari, press Shift-Command-N to open a private window.",
+      "Pages you visit there aren't saved in your history."
+    ],
+    "shortcut": "Shift-Command-N",
+    "app": "com.apple.Safari"
+  },
+  {
+    "id": "reopen_tab",
+    "title": "Get back a tab I closed",
+    "category": "web",
+    "keywords": [
+      "closed tab",
+      "reopen tab",
+      "closed page by mistake"
+    ],
+    "steps": [
+      "Press Shift-Command-T in Safari or Chrome to reopen the last closed tab."
+    ],
+    "shortcut": "Shift-Command-T"
+  },
+  {
+    "id": "print",
+    "title": "Print something",
+    "category": "printing",
+    "keywords": [
+      "print",
+      "print document",
+      "print page"
+    ],
+    "steps": [
+      "Press Command-P.",
+      "Check the printer and number of copies.",
+      "Click 'Print'."
+    ],
+    "shortcut": "Command-P",
+    "settingsTopic": "printers"
+  },
+  {
+    "id": "save_as_pdf",
+    "title": "Save something as a PDF",
+    "category": "printing",
+    "keywords": [
+      "save as pdf",
+      "make pdf",
+      "pdf"
+    ],
+    "steps": [
+      "Press Command-P as if printing.",
+      "Click the 'PDF' menu at the bottom left and choose 'Save as PDF'.",
+      "Name it and click 'Save'."
+    ],
+    "shortcut": "Command-P"
+  },
+  {
+    "id": "scan_with_iphone",
+    "title": "Scan a paper document with my iPhone",
+    "category": "printing",
+    "keywords": [
+      "scan document",
+      "scanner",
+      "scan paper"
+    ],
+    "steps": [
+      "In Finder, hold the Control key and click an empty spot on the Desktop.",
+      "Choose 'Import from iPhone', then 'Scan Documents'.",
+      "Point your iPhone at the paper; the scan appears on your Mac."
+    ]
+  },
+  {
+    "id": "restart_shutdown",
+    "title": "Restart or shut down",
+    "category": "power",
+    "keywords": [
+      "restart",
+      "shut down",
+      "turn off computer",
+      "reboot"
+    ],
+    "steps": [
+      "Click the Apple logo at the top left of the screen.",
+      "Choose 'Restart…' or 'Shut Down…'."
+    ]
+  },
+  {
+    "id": "lock_screen",
+    "title": "Lock my Mac when I step away",
+    "category": "power",
+    "keywords": [
+      "lock screen",
+      "lock computer",
+      "step away"
+    ],
+    "steps": [
+      "Press Control-Command-Q. Your password is needed to get back in."
+    ],
+    "shortcut": "Control-Command-Q",
+    "settingsTopic": "require_password"
+  },
+  {
+    "id": "sleep",
+    "title": "Put the Mac to sleep",
+    "category": "power",
+    "keywords": [
+      "sleep",
+      "sleep mode",
+      "rest computer"
+    ],
+    "steps": [
+      "Click the Apple logo at the top left and choose 'Sleep'.",
+      "On a laptop, you can also just close the lid."
+    ]
+  },
+  {
+    "id": "find_password",
+    "title": "Find a saved password",
+    "category": "power",
+    "keywords": [
+      "forgot password",
+      "saved passwords",
+      "website password"
+    ],
+    "steps": [
+      "Open the Passwords app.",
+      "Unlock it with your Mac password or Touch ID.",
+      "Search for the website to see its password."
+    ],
+    "app": "com.apple.Passwords"
+  }
+]

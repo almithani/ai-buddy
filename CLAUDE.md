@@ -12,6 +12,16 @@
 
 Do not wait to be asked. If you fix a bug, update TASKS.md in the same turn.
 
+## TESTS.md
+
+**Always keep `TESTS.md` current.** Update it in the same turn as the change — not as a separate step.
+
+- When you add or change a feature: add or update its manual checklist items, and note any automated test you added (file + what it covers).
+- When you add automated tests or a new check script: list them in the automated / dev-check sections with the command to run them.
+- When you fix a bug: add a checklist item or test that would catch it coming back.
+- When a feature is removed: remove its tests and checklist items.
+- Update the `Last updated` date at the top whenever you edit the file.
+
 ## Project
 
 This is a macOS desktop app built with Tauri 2 (Rust backend, React/TypeScript frontend).

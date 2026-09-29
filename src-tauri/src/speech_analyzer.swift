@@ -215,6 +215,30 @@ final class AnalyzerLane: @unchecked Sendable {
         return status == noErr ? pcm : nil
     }
 
+    /// Like stop(), but waits (up to `timeout` seconds) until the final results
+    /// for everything already fed have been delivered — hold-to-talk needs the
+    /// last words before it sends. Returns false if it gave up at the timeout.
+    @discardableResult
+    func finish(timeout: Double) async -> Bool {
+        continuation.finish()
+        let analyzer = self.analyzer
+        let results = self.resultsTask
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                try? await analyzer.finalizeAndFinishThroughEndOfInput()
+                await results?.value
+                return true
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return false
+            }
+            let completed = await group.next() ?? false
+            group.cancelAll()
+            return completed
+        }
+    }
+
     func stop() {
         continuation.finish()
         // Close the recording — releasing the AVAudioFile flushes the WAV header.
@@ -401,4 +425,183 @@ public func aibuddy_sa_stop() {
     SAEngine.lanes = [:]
     SAEngine.lock.unlock()
     for (_, lane) in lanes { lane.stop() }
+}
+
+// ── Hold-to-talk dictation ──────────────────────────────────────────────────
+// Separate from the meeting lanes (own AVAudioEngine + lane, source 2) so
+// holding ⌥Space works even while a meeting is being transcribed.
+//
+// Latency matters: people start talking the moment they press. Measured on
+// macOS 26.6: creating a lane takes ~55–140 ms and starting the mic 150–770 ms,
+// so a spare lane is prepared in advance (prewarm) and the mic is started on
+// key-down rather than after the hold is confirmed (voice.rs).
+
+@available(macOS 26.0, *)
+enum Dictation {
+    nonisolated(unsafe) static var engine: AVAudioEngine?
+    nonisolated(unsafe) static var lane: AnalyzerLane?
+    /// A ready-to-use lane (no mic attached), so starting doesn't wait for setup.
+    nonisolated(unsafe) static var spare: AnalyzerLane?
+    nonisolated(unsafe) static let lock = NSLock()
+    // Diagnostics for the current session (logged at stop).
+    nonisolated(unsafe) static var buffers = 0
+    nonisolated(unsafe) static var peak: Float = 0
+    nonisolated(unsafe) static var configChanged = false
+    nonisolated(unsafe) static var observer: NSObjectProtocol?
+
+    static func makeSpare(cb: AiBuddySpeechCallbackSwift, ctx: UnsafeMutableRawPointer?) async {
+        guard let locale = await SAEngine.resolveLocale(),
+              let lane = await AnalyzerLane(source: 2, locale: locale, recordPath: nil, cb: cb, ctx: ctx)
+        else { return }
+        lock.lock()
+        let old = spare
+        spare = lane
+        lock.unlock()
+        old?.stop()
+    }
+}
+
+/// 1 when microphone access is already granted (so starting the mic won't
+/// show a permission prompt).
+@_cdecl("aibuddy_mic_authorized")
+public func aibuddy_mic_authorized() -> Int32 {
+    AVCaptureDevice.authorizationStatus(for: .audio) == .authorized ? 1 : 0
+}
+
+/// Prepares a spare dictation lane in the background (no mic). Call at launch.
+@_cdecl("aibuddy_dictation_prewarm")
+public func aibuddy_dictation_prewarm(_ cb: AiBuddySpeechCallbackSwift, _ ctx: UnsafeMutableRawPointer?) {
+    guard #available(macOS 26.0, *) else { return }
+    nonisolated(unsafe) let uctx = ctx
+    Task.detached { await Dictation.makeSpare(cb: cb, ctx: uctx) }
+}
+
+/// 0 listening, -1 pre-macOS-26, -3 speech assets/locale unavailable,
+/// -4 microphone unavailable or permission denied. Call off the main thread.
+@_cdecl("aibuddy_dictation_start")
+public func aibuddy_dictation_start(
+    _ cb: AiBuddySpeechCallbackSwift,
+    _ ctx: UnsafeMutableRawPointer?
+) -> Int32 {
+    guard #available(macOS 26.0, *) else { return -1 }
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .denied, .restricted: return -4
+    default: break
+    }
+    nonisolated(unsafe) let uctx = ctx
+    return blockingAsync {
+        Dictation.lock.lock()
+        var lane = Dictation.spare
+        Dictation.spare = nil
+        Dictation.lock.unlock()
+        if lane == nil {
+            guard let locale = await SAEngine.resolveLocale() else { return Int32(-3) }
+            lane = await AnalyzerLane(source: 2, locale: locale, recordPath: nil, cb: cb, ctx: uctx)
+        }
+        guard let lane else { return Int32(-3) }
+
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        guard input.outputFormat(forBus: 0).sampleRate > 0 else {
+            lane.stop()
+            return Int32(-4)
+        }
+        Dictation.buffers = 0
+        Dictation.peak = 0
+        Dictation.configChanged = false
+        // format: nil = whatever the device delivers right now. A fixed format
+        // goes stale when a Bluetooth headset switches into call mode as its mic
+        // opens, and the tap then stops delivering audio.
+        let tap: AVAudioNodeTapBlock = { buf, _ in
+            Dictation.buffers += 1
+            if let d = buf.floatChannelData?[0] {
+                for i in 0..<Int(buf.frameLength) { Dictation.peak = max(Dictation.peak, abs(d[i])) }
+            }
+            lane.append(buf)
+        }
+        input.installTap(onBus: 0, bufferSize: 1024, format: nil, block: tap)
+        // A device change (e.g. that headset switch) stops the engine; rewire the
+        // tap to the new format and restart so the recording carries on.
+        Dictation.observer = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { _ in
+            Dictation.configChanged = true
+            Dictation.lock.lock()
+            let active = Dictation.engine === engine
+            Dictation.lock.unlock()
+            guard active else { return }
+            input.removeTap(onBus: 0)
+            input.installTap(onBus: 0, bufferSize: 1024, format: nil, block: tap)
+            engine.prepare()
+            do {
+                try engine.start()
+                NSLog("[AiBuddy] dictation: audio device changed — restarted with %@", input.outputFormat(forBus: 0).description)
+            } catch {
+                NSLog("[AiBuddy] dictation: audio device changed — restart failed: %@", error.localizedDescription)
+            }
+        }
+        // Register the session before starting: the headset's device change
+        // arrives ~50 ms after start and must find this engine as the active one.
+        Dictation.lock.lock()
+        Dictation.engine = engine
+        Dictation.lane = lane
+        Dictation.lock.unlock()
+        do {
+            engine.prepare()
+            try engine.start()
+        } catch {
+            NSLog("[AiBuddy] dictation: mic start failed: %@", error.localizedDescription)
+            Dictation.lock.lock()
+            Dictation.engine = nil
+            Dictation.lane = nil
+            Dictation.lock.unlock()
+            if let observer = Dictation.observer {
+                NotificationCenter.default.removeObserver(observer)
+                Dictation.observer = nil
+            }
+            input.removeTap(onBus: 0)
+            lane.stop()
+            return Int32(-4)
+        }
+        NSLog("[AiBuddy] dictation: mic started — %@", input.outputFormat(forBus: 0).description)
+        return Int32(0)
+    }
+}
+
+/// Stops the mic, waits (≤4 s) for the final words, then calls `done(ctx)`.
+/// Also prepares the next spare lane so the next hold starts instantly.
+@_cdecl("aibuddy_dictation_stop")
+public func aibuddy_dictation_stop(
+    _ done: @convention(c) (UnsafeMutableRawPointer?) -> Void,
+    _ ctx: UnsafeMutableRawPointer?,
+    _ cb: AiBuddySpeechCallbackSwift
+) {
+    guard #available(macOS 26.0, *) else {
+        done(ctx)
+        return
+    }
+    Dictation.lock.lock()
+    let engine = Dictation.engine
+    let lane = Dictation.lane
+    Dictation.engine = nil
+    Dictation.lane = nil
+    Dictation.lock.unlock()
+
+    NSLog("[AiBuddy] dictation: stopping — %d buffers, peak level %.3f, engine running=%d, config changed=%d",
+          Dictation.buffers, Dictation.peak, (engine?.isRunning ?? false) ? 1 : 0, Dictation.configChanged ? 1 : 0)
+    if let observer = Dictation.observer {
+        NotificationCenter.default.removeObserver(observer)
+        Dictation.observer = nil
+    }
+    engine?.inputNode.removeTap(onBus: 0)
+    engine?.stop()
+    nonisolated(unsafe) let uctx = ctx
+    nonisolated(unsafe) let udone = done
+    Task.detached {
+        if let lane, await !lane.finish(timeout: 4.0) {
+            NSLog("[AiBuddy] dictation: finish timed out after 4 s — sending what was heard so far")
+        }
+        udone(uctx)
+        await Dictation.makeSpare(cb: cb, ctx: nil)
+    }
 }

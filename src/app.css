@@ -16,12 +16,97 @@
   --text-muted:  #8899bb;
   --success:     #00E676;
   --error:       #FF5252;
+  --error-hover: #ff7070;
+  --accent-hover:  #33C4FF;
+  --on-accent:     #000000;
+  --accent-soft:   rgba(0, 180, 255, 0.12);
+  --accent-softer: rgba(0, 180, 255, 0.07);
+  --accent-border: rgba(0, 180, 255, 0.22);
+  --accent-focus:  rgba(0, 180, 255, 0.4);
+  --surface-sunken: rgba(0, 0, 0, 0.25);
+  --hover:         rgba(255, 255, 255, 0.08);
+  --speaker-them:  #b48ee0;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Follow macOS display settings ──────────────────────────────────────────
+   Light/Dark: prefers-color-scheme (WKWebView tracks the system appearance).
+   Contrast / transparency / motion: data attributes set from the native
+   settings by src/lib/displayPrefs.ts. Text size: CSS zoom on the chat. */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --accent:        #0070C9;
+    --accent-dim:    #005A9E;
+    --accent-glow:   rgba(0, 112, 201, 0.2);
+    --bg-deep:       #eef1f7;
+    --bg-card:       #ffffff;
+    --bg-input:      #f2f4f9;
+    --border:        rgba(0, 0, 0, 0.12);
+    --text:          #111827;
+    --text-muted:    #4b5870;
+    --success:       #0a8f4d;
+    --error:         #d32f2f;
+    --error-hover:   #e04848;
+    --accent-hover:  #1a82d4;
+    --on-accent:     #ffffff;
+    --accent-soft:   rgba(0, 112, 201, 0.1);
+    --accent-softer: rgba(0, 112, 201, 0.06);
+    --accent-border: rgba(0, 112, 201, 0.28);
+    --accent-focus:  rgba(0, 112, 201, 0.5);
+    --surface-sunken: rgba(0, 0, 0, 0.05);
+    --hover:         rgba(0, 0, 0, 0.06);
+    --speaker-them:  #7b3fb8;
+  }
+}
+
+/* Increase contrast: no grey-on-grey, stronger outlines. */
+:root[data-contrast="more"] {
+  --text-muted:    #dbe3f3;
+  --border:        rgba(255, 255, 255, 0.5);
+  --accent-border: rgba(0, 180, 255, 0.8);
+  --accent-focus:  rgba(0, 180, 255, 0.9);
+}
+@media (prefers-color-scheme: light) {
+  :root[data-contrast="more"] {
+    --text-muted:    #1f2937;
+    --border:        rgba(0, 0, 0, 0.55);
+    --accent-border: rgba(0, 90, 158, 0.85);
+    --accent-focus:  rgba(0, 90, 158, 0.95);
+  }
+}
+
+/* Reduce transparency: tinted see-through fills become solid colors. */
+:root[data-transparency="reduce"] {
+  --accent-soft:    #10324a;
+  --accent-softer:  #0f2233;
+  --accent-border:  #1d5f86;
+  --surface-sunken: #0b0f1c;
+  --hover:          #222b3d;
+  --accent-glow:    transparent;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-transparency="reduce"] {
+    --accent-soft:    #e3eef8;
+    --accent-softer:  #eef4fa;
+    --accent-border:  #a9c8e6;
+    --surface-sunken: #eceef2;
+    --hover:          #e6e9ef;
+    --accent-glow:    transparent;
+  }
+}
+
+/* Reduce motion: nothing animates (typing dots, cursor, droid, ring). */
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation: none !important;
+  transition: none !important;
 }
 
 html,
@@ -32,9 +117,13 @@ body {
   -webkit-user-select: none;
 }
 
+/* --ui-scale follows macOS text size (chat window only). WebKit doesn't shrink
+   viewport units inside a zoomed element (measured: 100vw at zoom 1.5 overflows
+   by 1.5×), so the size is divided by the zoom to fill the window exactly. */
 #root {
-  width: 100vw;
-  height: 100vh;
+  zoom: var(--ui-scale, 1);
+  width: calc(100vw / var(--ui-scale, 1));
+  height: calc(100vh / var(--ui-scale, 1));
   display: flex;
   align-items: stretch;
   background: transparent;

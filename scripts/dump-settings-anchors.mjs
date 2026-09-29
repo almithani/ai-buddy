@@ -5,6 +5,8 @@
 //     entry's pane/anchor exists on this Mac (exit 1 if any are missing)
 //   node scripts/dump-settings-anchors.mjs --pages  → print the catalog's pages
 //     that have a control, as input for settings-controls-probe.swift
+//   node scripts/dump-settings-anchors.mjs --check-howtos → check how-to app bundle
+//     ids exist and settingsTopic links resolve
 //   node scripts/dump-settings-anchors.mjs --verify-controls <probe.jsonl>
 //     → check each topic's controlId/controlLabel was found on its page
 // Re-run after macOS updates: anchor names change between releases.
@@ -22,6 +24,31 @@ const pageKey = (t) => `${t.pane} ${t.anchor ?? "-"}`;
 if (process.argv.includes("--pages")) {
   const pages = new Set(catalog.filter((t) => t.controlId || t.controlLabel).map(pageKey));
   console.log([...pages].join("\n"));
+  process.exit(0);
+}
+
+if (process.argv.includes("--check-howtos")) {
+  // Every how-to app must exist on this Mac (third-party apps like Zoom are
+  // reported, not failed) and every settingsTopic cross-link must exist.
+  const howtos = JSON.parse(readFileSync(join(root, "src/lib/howtoCatalog.json"), "utf8"));
+  const settingIds = new Set(catalog.map((t) => t.id));
+  const problems = [];
+  const ids = howtos.map((t) => t.id);
+  for (const id of ids.filter((id, i) => ids.indexOf(id) !== i)) problems.push(`duplicate how-to id: ${id}`);
+  for (const t of howtos) {
+    if (t.settingsTopic && !settingIds.has(t.settingsTopic)) problems.push(`${t.id}: settingsTopic ${t.settingsTopic} not in settings catalog`);
+    if (!t.app) continue;
+    const found = execFileSync("mdfind", [`kMDItemCFBundleIdentifier == '${t.app}'`], { encoding: "utf8" }).trim();
+    if (!found) {
+      if (t.app.startsWith("com.apple.")) problems.push(`${t.id}: app ${t.app} not found`);
+      else console.log(`note: ${t.id}: third-party app ${t.app} not installed here`);
+    }
+  }
+  if (problems.length) {
+    console.error(`${problems.length} how-to problem(s):\n  ${problems.join("\n  ")}`);
+    process.exit(1);
+  }
+  console.log(`how-tos OK: ${howtos.length} topics`);
   process.exit(0);
 }
 
@@ -63,6 +90,12 @@ JSON.stringify(out);
 
 const dump = JSON.parse(execFileSync("osascript", ["-l", "JavaScript", "-e", jxa], { encoding: "utf8" }));
 const osVersion = execFileSync("sw_vers", ["-productVersion"], { encoding: "utf8" }).trim();
+// System Settings sometimes answers with a near-empty list while it's still
+// launching or quitting; never overwrite a good dump with that.
+if (Object.keys(dump).length < 10) {
+  console.error(`System Settings returned only ${Object.keys(dump).length} pane(s) — probably still starting up. Try again; ${dumpPath} left unchanged.`);
+  process.exit(2);
+}
 writeFileSync(dumpPath, JSON.stringify({ macos: osVersion, panes: dump }, null, 2) + "\n");
 
 const anchorCount = Object.values(dump).reduce((n, a) => n + a.length, 0);
