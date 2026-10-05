@@ -137,7 +137,8 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] Highlight text in another app, hold ⌥Space, say "summarize this" → summary of the highlighted text
 - [ ] Press ⌥Space while an answer is being read aloud → speech stops
 - [ ] "always read your answers out loud" → typed questions are read too; "stop reading answers out loud" → nothing read; Memory window shows the setting
-- [ ] Start a meeting transcription, then hold ⌥Space and talk → both keep working; the dictated words don't appear in the transcript as "Me"? (they may — same mic; note what happens)
+- [ ] Start a meeting transcription and stay on the Transcript tab, then hold ⌥Space and talk → the chat switches to the Chat tab and shows the grey → red listening card; both keep working (dictated words may also appear in the transcript as "Me" — same mic)
+- [ ] Tap ⌥Space while on the Transcript tab → switches to the Chat tab
 
 ### Greeting
 - [ ] No saved preferences → chat opens instantly with "What can I help you with?"
@@ -165,6 +166,7 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 
 ### Transcription
 - [ ] Start → speak → Stop: "Me"/"Them" turns appear live; file saved with summary + subject in the filename
+- [ ] While recording, the Transcript tab label shows a pulsing red dot (also visible from the Chat tab); it disappears on Stop; reopening the chat mid-recording still shows it
 - [ ] On speakers (no headphones), the other side's speech isn't duplicated as "Me"
 - [ ] With Bluetooth headphones (e.g. AirPods): start a meeting transcription, talk for a minute → "Me" lines appear throughout (terminal shows `Mic: audio configuration changed — rebuilding engine` once near the start, then `Mic RMS` rising when you talk)
 - [ ] Switch tabs during "Writing up your meeting notes…" → status bar survives

@@ -71,6 +71,8 @@ export default function ChatPanel() {
   // Voice events are subscribed once; this ref always points at the latest
   // handleSend so it sees current resources/busy state.
   const sendRef = useRef<(spokenText?: string) => void>(() => {});
+  // Meeting transcription running — shown as a red dot on the Transcript tab.
+  const [recording, setRecording] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -174,7 +176,10 @@ export default function ChatPanel() {
       setMessages((m) => [...m, { id: nextId++, role: "buddy", text }]);
     }
 
+    invoke<boolean>("is_transcribing").then(setRecording).catch(() => null);
+
     const unlistenStarted = listen<string>("transcription-started", (event) => {
+      setRecording(true);
       const livePath = event.payload;
       if (livePath) {
         const filename = livePath.split("/").pop() ?? livePath;
@@ -186,6 +191,7 @@ export default function ChatPanel() {
       }
     });
     const unlistenStopped = listen("transcription-stopped", () => {
+      setRecording(false);
       injectBuddyMessage("I've stopped recording.");
       processingNotedRef.current = false; // arm the one-time "working on it" line
     });
@@ -217,6 +223,8 @@ export default function ChatPanel() {
       injectBuddyMessage(`Heads up: ${event.payload}`);
     });
     const unlistenError = listen<string>("transcription-error", (event) => {
+      // A fatal error ends the session; ask rather than assume.
+      invoke<boolean>("is_transcribing").then(setRecording).catch(() => null);
       injectBuddyMessage(`Something went wrong with transcription: ${event.payload}`);
     });
 
@@ -243,6 +251,7 @@ export default function ChatPanel() {
           : []
       );
       setInput("");
+      setView("chat");
       // Keep `busy` while a reply is still streaming, so holding ⌥Space
       // mid-answer doesn't start listening (voice.rs checks set_voice_blocked).
       if (streamingIdRef.current === null) setBusy(false);
@@ -268,8 +277,16 @@ export default function ChatPanel() {
     const unlisteners = [
       // The mic starts on key-down, so words may already have been heard by
       // the time the hold is confirmed — keep them.
-      listen("voice-preparing", () => setVoicePhase("preparing")),
-      listen("voice-listening", () => setVoicePhase("listening")),
+      // The listening card lives on the Chat tab — switch to it (e.g. from the
+      // Transcript tab during a meeting) so there's always a visible cue.
+      listen("voice-preparing", () => {
+        setView("chat");
+        setVoicePhase("preparing");
+      }),
+      listen("voice-listening", () => {
+        setView("chat");
+        setVoicePhase("listening");
+      }),
       listen("voice-cancelled", () => {
         // Let go before the mic was ready: nothing was recorded.
         if (voicePhaseRef.current === "preparing") {
@@ -569,7 +586,9 @@ export default function ChatPanel() {
         <button
           className={`chat-tab ${view === "transcript" ? "chat-tab-active" : ""}`}
           onClick={() => setView("transcript")}
+          title={recording ? "Recording a meeting" : undefined}
         >
+          {recording && <span className="chat-tab-rec" aria-label="Recording" />}
           Transcript
         </button>
       </div>

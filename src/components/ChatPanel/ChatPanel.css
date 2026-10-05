@@ -69,6 +69,18 @@
   transition: color 0.15s, border-color 0.15s;
 }
 .chat-tab:hover { color: var(--text); }
+
+/* Red dot on the Transcript tab while a meeting is being recorded. */
+.chat-tab-rec {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--hot-mic);
+  animation: listening-pulse 1.2s ease-in-out infinite;
+}
 .chat-tab-active {
   color: var(--accent);
   border-bottom-color: var(--accent);
