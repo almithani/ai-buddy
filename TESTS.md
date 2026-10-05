@@ -139,6 +139,7 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] "always read your answers out loud" → typed questions are read too; "stop reading answers out loud" → nothing read; Memory window shows the setting
 - [ ] Start a meeting transcription and stay on the Transcript tab, then hold ⌥Space and talk → the chat switches to the Chat tab and shows the grey → red listening card; both keep working (dictated words may also appear in the transcript as "Me" — same mic)
 - [ ] Tap ⌥Space while on the Transcript tab → switches to the Chat tab
+- [ ] Hold ⌥Space → the Chat tab label gets a pulsing red dot only once the card turns red ("Listening…"), not while grey; it disappears on release
 
 ### Greeting
 - [ ] No saved preferences → chat opens instantly with "What can I help you with?"

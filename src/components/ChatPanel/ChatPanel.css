@@ -70,7 +70,8 @@
 }
 .chat-tab:hover { color: var(--text); }
 
-/* Red dot on the Transcript tab while a meeting is being recorded. */
+/* Red dot on a tab while its mic is live: Transcript = meeting recording,
+   Chat = hold-to-talk listening. */
 .chat-tab-rec {
   display: inline-block;
   width: 7px;

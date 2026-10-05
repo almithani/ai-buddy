@@ -244,14 +244,18 @@ export default function ChatPanel() {
     // "hotkey-triggered" is a bare signal — no payload. We pull the text via
     // get_pending_text() so there is no race with the window becoming visible.
     const unlisten = listen("hotkey-triggered", async () => {
-      const { text } = await invoke<{ text: string; debug: string }>("get_pending_text");
+      // Switch first: nothing below may stop ⌥Space from bringing the Chat tab forward.
+      setView("chat");
+      const { text } = await invoke<{ text: string; debug: string }>("get_pending_text").catch((e) => {
+        console.error("get_pending_text failed:", e);
+        return { text: "", debug: "" };
+      });
       setResources(
         text
           ? [{ id: nextId++, type: "text", label: text.slice(0, 50) + (text.length > 50 ? "…" : ""), content: text }]
           : []
       );
       setInput("");
-      setView("chat");
       // Keep `busy` while a reply is still streaming, so holding ⌥Space
       // mid-answer doesn't start listening (voice.rs checks set_voice_blocked).
       if (streamingIdRef.current === null) setBusy(false);
@@ -580,7 +584,9 @@ export default function ChatPanel() {
         <button
           className={`chat-tab ${view === "chat" ? "chat-tab-active" : ""}`}
           onClick={() => setView("chat")}
+          title={voicePhase === "listening" ? "Listening" : undefined}
         >
+          {voicePhase === "listening" && <span className="chat-tab-rec" aria-label="Listening" />}
           Chat
         </button>
         <button
