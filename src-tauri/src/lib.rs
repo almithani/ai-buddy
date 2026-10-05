@@ -70,25 +70,78 @@ fn show_chat_impl(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("chat") {
         // Only reposition when chat is not already visible; otherwise just focus it.
         if !w.is_visible().unwrap_or(false) {
-            if let Some(droid) = app.get_webview_window("droid") {
-                if let Ok(pos) = droid.outer_position() {
-                    if let Ok(Some(monitor)) = droid.current_monitor() {
-                        let scale = monitor.scale_factor();
-                        let screen_h_logical = monitor.size().height as f64 / scale;
-                        let droid_log_x = pos.x as f64 / scale;
-                        let droid_log_y = pos.y as f64 / scale;
-                        // 108 logical px to the right (100 droid width + 8 gap), tops aligned
-                        let chat_x = droid_log_x + 108.0;
-                        let chat_y = droid_log_y.min(screen_h_logical - 520.0);
-                        w.set_position(tauri::LogicalPosition::new(chat_x, chat_y)).ok();
-                    }
-                }
-            }
+            position_chat_by_droid(app, &w);
         }
         w.show().map_err(|e| e.to_string())?;
         w.set_focus().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+fn position_chat_by_droid(app: &tauri::AppHandle, w: &tauri::WebviewWindow) {
+    if let Some(droid) = app.get_webview_window("droid") {
+        if let Ok(pos) = droid.outer_position() {
+            if let Ok(Some(monitor)) = droid.current_monitor() {
+                let scale = monitor.scale_factor();
+                let screen_h_logical = monitor.size().height as f64 / scale;
+                let droid_log_x = pos.x as f64 / scale;
+                let droid_log_y = pos.y as f64 / scale;
+                // 108 logical px to the right (100 droid width + 8 gap), tops aligned
+                let chat_x = droid_log_x + 108.0;
+                let chat_y = droid_log_y.min(screen_h_logical - 520.0);
+                w.set_position(tauri::LogicalPosition::new(chat_x, chat_y)).ok();
+            }
+        }
+    }
+}
+
+/// Second half of the ⌥Space show: focus the (already visible) chat so typing
+/// goes to it, keeping it in front while AI Buddy activates (see
+/// `aibuddy_focus_window_keep_front`). Tauri's show()+set_focus() let it drop
+/// behind the previous app for a moment.
+fn focus_chat_keep_front(app: &tauri::AppHandle) {
+    let Some(w) = app.get_webview_window("chat") else { return };
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn aibuddy_focus_window_keep_front(ns_window: *mut std::ffi::c_void);
+        }
+        let w2 = w.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(ns) = w2.ns_window() {
+                unsafe { aibuddy_focus_window_keep_front(ns) };
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Shows the chat immediately without activating AI Buddy, so the app the
+/// user was in stays frontmost while its selected text is captured (the
+/// clipboard fallback sends ⌘C to the frontmost app).
+fn show_chat_without_focus(app: &tauri::AppHandle) {
+    let Some(w) = app.get_webview_window("chat") else { return };
+    if !w.is_visible().unwrap_or(false) {
+        position_chat_by_droid(app, &w);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn aibuddy_order_front_passive(ns_window: *mut std::ffi::c_void);
+        }
+        let w2 = w.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(ns) = w2.ns_window() {
+                unsafe { aibuddy_order_front_passive(ns) };
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = w.show();
 }
 
 #[tauri::command]
@@ -275,21 +328,35 @@ pub fn run() {
                                 voice::key_up();
                             }
                             if event.state() == ShortcutState::Pressed && voice::key_down(app) {
-                                let prev = app.state::<PrevApp>();
-                                let pending = app.state::<PendingText>();
-
+                                let pressed_at = std::time::Instant::now();
                                 // 1. Save frontmost PID (via NSWorkspace, no AX needed)
-                                accessibility::save_prev_app_pid(&prev);
-                                // 2. Capture selected text + diagnostic log
-                                let (text, debug) = accessibility::capture_selected_text_debug(&prev);
-                                // 3. Store so ChatPanel can read reliably
-                                *pending.0.lock().unwrap() = PendingCapture { text, debug };
-                                // 4. Show chat window
-                                show_chat_impl(app).ok();
-                                // 5. Send signal — no payload; chat calls get_pending_text()
-                                if let Some(chat) = app.get_webview_window("chat") {
-                                    let _ = chat.emit("hotkey-triggered", ());
-                                }
+                                accessibility::save_prev_app_pid(&app.state::<PrevApp>());
+                                // 2. Show the chat right away, without taking focus.
+                                //    Capturing the selection used to run first on
+                                //    this (main) thread — slow AX replies plus the
+                                //    ⌘C clipboard fallback's 0.5 s wait delayed the
+                                //    window by up to a couple of seconds.
+                                show_chat_without_focus(app);
+                                let app = app.clone();
+                                std::thread::spawn(move || {
+                                    // 3. Capture selected text + diagnostic log
+                                    let (text, debug) =
+                                        accessibility::capture_selected_text_debug(&app.state::<PrevApp>());
+                                    eprintln!(
+                                        "[hotkey] selection captured in {:?}: {} chars\n{}",
+                                        pressed_at.elapsed(),
+                                        text.chars().count(),
+                                        debug.trim_end()
+                                    );
+                                    // 4. Store so ChatPanel can read reliably
+                                    *app.state::<PendingText>().0.lock().unwrap() = PendingCapture { text, debug };
+                                    // 5. Now take focus so typing goes to the chat
+                                    focus_chat_keep_front(&app);
+                                    // 6. Send signal — no payload; chat calls get_pending_text()
+                                    if let Some(chat) = app.get_webview_window("chat") {
+                                        let _ = chat.emit("hotkey-triggered", ());
+                                    }
+                                });
                             }
                         })
                         .build(),

@@ -61,7 +61,12 @@ export default function ChatPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingIdRef = useRef<number | null>(null);
-  const [listening, setListening] = useState(false);
+  // Hold-to-talk: "preparing" = held but the mic isn't live yet (Bluetooth
+  // headsets take 1–2 s); "listening" = mic live, words are being heard.
+  const [voicePhase, setVoicePhase] = useState<"off" | "preparing" | "listening">("off");
+  const voicePhaseRef = useRef(voicePhase);
+  voicePhaseRef.current = voicePhase;
+  const listening = voicePhase !== "off";
   const [heard, setHeard] = useState("");
   // Voice events are subscribed once; this ref always points at the latest
   // handleSend so it sees current resources/busy state.
@@ -263,21 +268,26 @@ export default function ChatPanel() {
     const unlisteners = [
       // The mic starts on key-down, so words may already have been heard by
       // the time the hold is confirmed — keep them.
-      listen("voice-listening", () => setListening(true)),
+      listen("voice-preparing", () => setVoicePhase("preparing")),
+      listen("voice-listening", () => setVoicePhase("listening")),
       listen("voice-cancelled", () => {
-        setListening(false);
+        // Let go before the mic was ready: nothing was recorded.
+        if (voicePhaseRef.current === "preparing") {
+          injectBuddy("Keep holding ⌥Space until you hear the pop, then talk.");
+        }
+        setVoicePhase("off");
         setHeard("");
       }),
       listen<{ text: string }>("voice-partial", (e) => setHeard(e.payload.text)),
       listen<{ text: string }>("voice-result", (e) => {
-        setListening(false);
+        setVoicePhase("off");
         setHeard("");
         const text = e.payload.text.trim();
         if (text) sendRef.current(text);
         else injectBuddy("I didn't catch that — hold ⌥Space while you talk, then let go.");
       }),
       listen<{ reason: string }>("voice-unavailable", (e) => {
-        setListening(false);
+        setVoicePhase("off");
         if (e.payload.reason === "assets") {
           invoke("install_speech_assets").catch(() => null);
           injectBuddy("I'm downloading voice support (one time only). Try holding ⌥Space again in a minute.");
@@ -637,10 +647,14 @@ export default function ChatPanel() {
       )}
 
       {listening && (
-        <div className="chat-listening" role="status">
-          <span className="chat-listening-dot" />
+        <div className={`chat-listening ${voicePhase === "listening" ? "chat-listening-live" : ""}`} role="status">
+          <span className={`chat-listening-dot ${voicePhase === "preparing" ? "chat-listening-dot-waiting" : ""}`} />
           <div>
-            <div className="chat-listening-title">Listening… let go of ⌥Space to send</div>
+            <div className="chat-listening-title">
+              {voicePhase === "preparing"
+                ? "Getting the microphone ready… keep holding"
+                : "Listening… let go of ⌥Space to send"}
+            </div>
             {heard && <div className="chat-listening-text">{heard}</div>}
           </div>
         </div>

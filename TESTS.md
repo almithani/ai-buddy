@@ -1,6 +1,6 @@
 # AI Buddy — Tests
 
-Last updated: 2026-09-29
+Last updated: 2026-10-05
 
 How to check the app still works: automated tests first, then the macOS-dependent
 dev checks, then manual checklists per feature. Record anything that fails as a
@@ -111,7 +111,17 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] "the website text is too small" → web_zoom how-to (Command-Plus) and mentions the related text-size setting
 
 ### Hold-to-talk voice (⌥Space)
-- [ ] Tap ⌥Space quickly → chat opens as before, no listening banner, no pop, nothing sent (the orange mic dot may flash briefly — expected)
+- [ ] Tap ⌥Space quickly → chat window appears right away (well under a second, even over Chrome), no listening banner, no pop, nothing sent (the orange mic dot may flash briefly — expected). Terminal: `[hotkey] selection captured in …`
+- [ ] Highlight text in Chrome, press ⌥Space → window appears immediately; a moment later the "summarize or edit?" offer appears with the text chip
+- [ ] Highlight text in Terminal (in a window that isn't busy printing/redrawing), press ⌥Space → "summarize or edit?" offer with the text chip; terminal log shows `selection captured … N chars` with N > 0
+- [ ] Hold ⌥Space, let go of ⌥ BEFORE Space, then press ⌥Space again later → the chat still responds (log may show `previous ⌥Space release was missed`)
+- [ ] Hold ⌥Space over Terminal or Chrome → the chat appears and stays visible the whole time (no flash away and back)
+- [ ] Tap ⌥Space over Terminal, then immediately type a few letters → they appear in the chat input, NOT in Terminal
+- [ ] Press ⌥Space in Terminal / TextEdit / Notes with NOTHING selected → no system "ding" (only the pop when holding); log shows `skipping ⌘C fallback`
+- [ ] Select text in TextEdit or Notes, press ⌥Space → still captured (summarize/edit offer)
+- [ ] Select text on a web page in Chrome or Safari, press ⌥Space → still captured (uses the clipboard fallback)
+- [ ] With Bluetooth headphones, hold ⌥Space → at ~⅓ s a GREY card says "Getting the microphone ready… keep holding", then it turns RED (red tint, red border, red title, pulsing red dot) with "Listening…" and the pop; text doesn't jump when it switches. Check in both Light and Dark mode.
+- [ ] Let go while it still says "Getting the microphone ready" → "Keep holding ⌥Space until you hear the pop, then talk."
 - [ ] Hold ⌥Space → after ~⅓ s the "Listening…" banner appears with a soft "pop" (first time: macOS asks for microphone permission)
 - [ ] Press and START TALKING IMMEDIATELY (before the pop) → your first words are included (terminal: `[voice] mic started …ms after press`)
 - [ ] Say a phrase, pause 1–2 s, say another, then release → both phrases are sent

@@ -260,3 +260,16 @@ void aibuddy_frontmost_bundle_id(char *buf, int len) {
         CopyOut(NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier ?: @"(none)", buf, len);
     }
 }
+
+/// Gives the window keyboard focus without it ever dropping behind the
+/// previously active app. Tauri's set_focus does makeKeyAndOrderFront *before*
+/// activating, which orders an inactive app's window behind the active app's
+/// windows until activation completes (macOS can delay that while keys are
+/// held) — the chat flashed away and back when ⌥Space was held.
+void aibuddy_focus_window_keep_front(void *ns_window) {
+    NSWindow *win = (__bridge NSWindow *)ns_window;
+    [win orderFrontRegardless];
+    [NSApp activateIgnoringOtherApps:YES];
+    [win makeKeyAndOrderFront:nil];
+    [win orderFrontRegardless];
+}

@@ -322,16 +322,29 @@ mod mac {
             log.push_str(" OK\n");
 
             // Step 3 — AXSelectedText
+            let mut role_ref: CFTypeRef = std::ptr::null_mut();
+            let role = if AXUIElementCopyAttributeValue(focused as AXUIElementRef, cf_str("AXRole").as_concrete_TypeRef(), &mut role_ref) == AX_SUCCESS && !role_ref.is_null() {
+                CFString::wrap_under_create_rule(role_ref as CFStringRef).to_string()
+            } else {
+                String::new()
+            };
             let mut value: CFTypeRef = std::ptr::null_mut();
             let err2 = AXUIElementCopyAttributeValue(focused as AXUIElementRef, cf_str("AXSelectedText").as_concrete_TypeRef(), &mut value);
             CFRelease(focused);
-            log.push_str(&format!("AXSelectedText → err={}", err2));
+            log.push_str(&format!("AXSelectedText ({}) → err={}", role, err2));
 
             if err2 == AX_SUCCESS && !value.is_null() {
                 let s = CFString::wrap_under_create_rule(value as CFStringRef).to_string();
                 log.push_str(&format!(" OK → {:?}\n", s));
                 if !s.is_empty() {
                     return (Some(s), log);
+                }
+                // Native text controls report their selection reliably, so empty
+                // really means nothing is selected — and ⌘C there hits a
+                // disabled Copy menu item, which makes macOS beep.
+                if role == "AXTextArea" || role == "AXTextField" {
+                    log.push_str("native text control with no selection — skipping ⌘C fallback\n");
+                    return (None, log);
                 }
                 log.push_str("AXSelectedText was empty, trying clipboard\n");
             } else {

@@ -11,7 +11,8 @@
 //! permission hasn't been granted yet, it waits for a real hold instead, so a
 //! tap never triggers the permission prompt.
 //!
-//! Events: voice-listening, voice-partial {text}, voice-result {text},
+//! Events: voice-preparing (held, mic not live yet), voice-listening,
+//! voice-partial {text}, voice-result {text},
 //! voice-cancelled, voice-unavailable {reason: "macos" | "assets" | "mic"},
 //! voice-blocked.
 
@@ -162,7 +163,13 @@ pub fn key_down(app: &AppHandle) -> bool {
     let generation = {
         let Ok(mut s) = STATE.lock() else { return false };
         if s.key_down {
-            return false;
+            // Key repeat while held → ignore. But if Space isn't physically down,
+            // a release was missed (e.g. ⌥ let go before Space); without this,
+            // every later press would be ignored — no capture, no chat.
+            if space_is_down() {
+                return false;
+            }
+            eprintln!("[hotkey] previous ⌥Space release was missed — treating this as a new press");
         }
         s.key_down = true;
         s.confirmed = false;
@@ -189,6 +196,20 @@ pub fn key_up() {
     }
 }
 
+fn space_is_down() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // kCGEventSourceStateCombinedSessionState = 0, kVK_Space = 49
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
+        }
+        unsafe { CGEventSourceKeyState(0, 49) }
+    }
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
 fn still_held(generation: u64) -> bool {
     STATE.lock().map(|s| s.key_down && s.generation == generation).unwrap_or(false)
 }
@@ -207,6 +228,21 @@ fn run_hold(app: &AppHandle, generation: u64, pressed_at: Instant) {
             let _ = app.emit("voice-blocked", ());
         }
         return;
+    }
+
+    // The mic can take 1–2 s to go live (a Bluetooth headset switching into
+    // call mode). If it isn't live when the hold is confirmed, say so right
+    // away instead of showing nothing.
+    {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            wait_for_hold(pressed_at);
+            if let Ok(s) = STATE.lock() {
+                if s.key_down && s.generation == generation && !s.confirmed {
+                    let _ = app.emit("voice-preparing", ());
+                }
+            }
+        });
     }
 
     // Start the mic right away when that can't pop a permission prompt;
@@ -248,14 +284,17 @@ fn run_hold(app: &AppHandle, generation: u64, pressed_at: Instant) {
 
     wait_for_hold(pressed_at);
     // Checked under the same lock key_up uses, so exactly one side stops the mic.
+    // Emitted under the lock so it can't be overtaken by voice-preparing.
     let confirmed = {
         let Ok(mut s) = STATE.lock() else { return };
         let held = s.key_down && s.generation == generation;
         s.confirmed = held;
+        if held {
+            let _ = app.emit("voice-listening", ());
+        }
         held
     };
     if confirmed {
-        let _ = app.emit("voice-listening", ());
         #[cfg(target_os = "macos")]
         unsafe {
             ffi::aibuddy_play_listen_cue()

@@ -329,8 +329,18 @@
   margin: 0 12px 8px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+/* Mic is live ("hot mic"): unmistakably red, unlike the grey "getting ready". */
+.chat-listening-live {
+  background: var(--hot-mic-soft);
+  border: 2px solid var(--hot-mic-border);
+  padding: 9px 11px; /* 1px less: the thicker border mustn't shift the text */
+}
+.chat-listening-live .chat-listening-title {
+  color: var(--hot-mic);
 }
 
 .chat-listening-dot {
@@ -339,8 +349,13 @@
   height: 10px;
   margin-top: 4px;
   border-radius: 50%;
-  background: var(--error);
+  background: var(--hot-mic);
   animation: listening-pulse 1.2s ease-in-out infinite;
+}
+
+.chat-listening-dot-waiting {
+  background: var(--text-muted);
+  animation: none;
 }
 
 @keyframes listening-pulse {
