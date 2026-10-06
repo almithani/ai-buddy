@@ -104,10 +104,16 @@ export default function ChatPanel() {
       if (trusted) {
         showGreeting();
       } else {
+        // macOS's own prompt (its "Open System Settings" button goes straight
+        // to the right page), plus clickable steps in case it's dismissed.
+        invoke("prompt_accessibility_permission").catch(() => null);
         setMessages([{
           id: nextId++,
           role: "buddy",
-          text: "I need **Accessibility permission** to read and edit text in other apps.\n\nGo to **System Settings → Privacy & Security → Accessibility** and add AI Buddy, then come back.",
+          text: "I need **Accessibility permission** to read and edit text in other apps.\n\n" +
+            "1. [Open Accessibility settings](aibuddy-action://open-accessibility) and switch on **AI Buddy** (click **+** to add it if it isn't listed).\n" +
+            "2. Then [restart AI Buddy](aibuddy-action://restart) — macOS only applies the permission after a restart.\n\n" +
+            "If AI Buddy is already switched on but this message keeps coming back (common after installing an update), select it in the list, click **–** to remove it, then add it again with **+**.",
         }]);
 
         pollInterval = setInterval(async () => {
@@ -612,7 +618,9 @@ export default function ChatPanel() {
                   // The default transform strips unknown protocols — let our
                   // reveal-in-Finder scheme through.
                   urlTransform={(url) =>
-                    url.startsWith("aibuddy-reveal://") ? url : defaultUrlTransform(url)
+                    url.startsWith("aibuddy-reveal://") || url.startsWith("aibuddy-action://")
+                      ? url
+                      : defaultUrlTransform(url)
                   }
                   components={{
                     a: ({ href, children }) => (
@@ -620,7 +628,11 @@ export default function ChatPanel() {
                         href={href}
                         onClick={(e) => {
                           e.preventDefault();
-                          if (href?.startsWith("aibuddy-reveal://")) {
+                          if (href === "aibuddy-action://open-accessibility") {
+                            invoke("request_accessibility_permission").catch(() => null);
+                          } else if (href === "aibuddy-action://restart") {
+                            invoke("restart_app").catch(() => null);
+                          } else if (href?.startsWith("aibuddy-reveal://")) {
                             const path = decodeURIComponent(
                               href.slice("aibuddy-reveal://".length)
                             );

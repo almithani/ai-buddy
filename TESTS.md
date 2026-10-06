@@ -178,4 +178,9 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 
 ### Onboarding and packaging
 - [ ] Fresh onboarding (delete `~/Library/Application Support/com.aibuddy.app/onboarding_complete`) → model download, Accessibility step, restart button
+- [ ] Remove AI Buddy from Accessibility (–) and relaunch → macOS's permission prompt appears; the chat message's "Open Accessibility settings" link opens Privacy & Security → Accessibility; after switching it on, "restart AI Buddy" relaunches and the normal greeting appears
+- [ ] Install a NEW build over an old one (unsigned) → expect lost Accessibility permission until removed + re-added (goes away once builds are Developer ID signed)
 - [ ] `npm run tauri build` → `.dmg` builds; installed app launches from Finder (bundled dylibs found)
+- [ ] `npm run build:universal` → `AI Buddy_<ver>_universal.dmg`; `lipo -archs` on `Contents/MacOS/aibuddy` and both `Contents/Frameworks/*.dylib` shows `x86_64 arm64`
+- [ ] Built app actually launches: `codesign --verify --deep --strict "…/AI Buddy.app"` passes AND running `…/AI Buddy.app/Contents/MacOS/aibuddy` from Terminal for a few seconds shows no `Library not loaded` / code-signature errors (a signing change once made every launch fail)
+- [ ] **On an Intel Mac:** installs and opens (right-click → Open while unsigned); onboarding + model download; model loads (watch for a GPU/Metal load failure); chat replies (note speed); settings help + ring; ⌥Space tap + hold (does hold-to-talk work or say "needs macOS 26"?); meeting transcription

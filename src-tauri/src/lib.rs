@@ -156,7 +156,9 @@ fn request_accessibility_permission() {
     #[cfg(target_os = "macos")]
     {
         let _ = std::process::Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            // macOS 13+ System Settings id; this anchor is in the verified settings
+            // dump (scripts/settings-anchors.json) and lands on the app list.
+            .arg("x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")
             .spawn();
     }
 }

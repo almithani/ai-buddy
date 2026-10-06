@@ -11,7 +11,9 @@
     "bump": "node scripts/bump-version.mjs",
     "release": "node scripts/bump-version.mjs patch && npm run tauri build",
     "release:minor": "node scripts/bump-version.mjs minor && npm run tauri build",
-    "release:major": "node scripts/bump-version.mjs major && npm run tauri build"
+    "release:major": "node scripts/bump-version.mjs major && npm run tauri build",
+    "build:universal": "tauri build --target universal-apple-darwin --config src-tauri/tauri.universal.conf.json",
+    "release:universal": "node scripts/bump-version.mjs patch && npm run build:universal"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

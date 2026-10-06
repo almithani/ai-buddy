@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "macOS": {
+      "frameworks": [
+        "target/aarch64-apple-darwin/release/libsherpa-onnx-c-api.dylib",
+        "target/aarch64-apple-darwin/release/libonnxruntime.1.17.1.dylib"
+      ]
+    }
+  }
+}
