@@ -22,6 +22,13 @@ Do not wait to be asked. If you fix a bug, update TASKS.md in the same turn.
 - When a feature is removed: remove its tests and checklist items.
 - Update the `Last updated` date at the top whenever you edit the file.
 
+## AI Buddy's self-description (`FEATURES` in `src/lib/agent.ts`)
+
+The model only knows about features listed in `FEATURES` — anything that isn't a tool (e.g. meeting transcription, hold-to-talk) is otherwise invisible to it. **When you add, remove or change how a user-facing feature is used, update `FEATURES` in the same turn**, and add a "does the buddy know about it?" check to `TESTS.md`.
+
+- Keep each entry to one line: what it does + how the user gets to it.
+- Keep the section short — the whole system prompt must fit the model's 4096-token context.
+
 ## Project
 
 This is a macOS desktop app built with Tauri 2 (Rust backend, React/TypeScript frontend).

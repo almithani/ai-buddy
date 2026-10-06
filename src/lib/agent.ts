@@ -25,6 +25,23 @@ interface ToolCall {
   args: Record<string, string>;
 }
 
+// ── What AI Buddy can do (so it can answer "can you…?" about itself) ─────────
+// Features that aren't tools — like meeting transcription, which the user starts
+// from the Transcript tab — would otherwise be invisible to the model. Keep this
+// short: the whole prompt has to fit a 4096-token context.
+
+const FEATURES = `
+What you (AI Buddy) can do — use this to answer questions about yourself, and tell them how to use it:
+- Meeting transcription: records both sides of a call or meeting on this Mac, shows it live, then saves notes with a summary to "AI Buddy Transcripts" in Documents. They start and stop it on the Transcript tab. You can change where notes are saved.
+- Talk to you: hold Option-Space, speak, and let go to send. Answers are read aloud when they talked (they can ask you to always or never read answers aloud).
+- Help with selected text: they highlight text in any app and press Option-Space (or paste it here), then you can summarize it or edit it in place.
+- Mac settings: you open the right System Settings page, point at the control and walk them through it.
+- Everyday Mac tasks: screenshots, files, email, video calls, printing and more, with step-by-step help.
+- Memory: you remember their preferences ("call me Al", "keep answers short"); they can see and delete these in the Memory panel (the ≡ button).
+- Read files they drop onto you (text files).
+- Everything runs privately on their Mac.
+`.trim();
+
 // ── Tool definitions injected into the system prompt ─────────────────────────
 
 const TOOL_DOCS = `
@@ -105,7 +122,7 @@ function buildSystemPrompt(memory: MemoryItem[], settingsQuery: string): string 
       ? `\nHow-to guides that may be relevant (topic ids for show_howto):\n${formatTopicList(howtos)}`
       : "";
 
-  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive. ${TOOL_DOCS}${ruleBlock}${settingBlock}${topicBlock}${howtoBlock}\n${LENGTH_RULES}`;
+  return `You are AI Buddy, a friendly on-screen assistant that helps users with everyday computer tasks. You are concise, helpful, and proactive.\n${FEATURES}\n${TOOL_DOCS}${ruleBlock}${settingBlock}${topicBlock}${howtoBlock}\n${LENGTH_RULES}`;
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────

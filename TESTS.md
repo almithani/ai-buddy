@@ -151,6 +151,9 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 ### Chat and agent
 - [ ] Reply length: "how do I take a screenshot", "make the text bigger", "what can you do?" → each answer ≤ ~3 short sentences/steps, no "Great question!" opener, no "let me know if…" ending
 - [ ] "tell me more" after a short answer → more detail is given
+- [ ] "Can you transcribe meetings?" → yes, and says to use the Transcript tab (start/stop there); "where do my notes go?" → AI Buddy Transcripts in Documents (or the folder you set)
+- [ ] "What can you do?" → short list covering transcription, talking (hold Option-Space), selected text, settings, everyday tasks, memory
+- [ ] "How do I make you forget something?" → points to the Memory panel (≡ button)
 - [ ] Summarize a pasted article → ≤5 short bullets
 - [ ] Replies render markdown and end cleanly (no doubled last characters, no `<end_of_turn>`)
 - [ ] While waiting for a reply, only the three-dots bubble shows (no blinking block cursor), including while a settings page or guide is opening; the dots disappear when the first words appear

@@ -1,6 +1,6 @@
 # AI Buddy — Session State & Next Steps
 
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 
 ---
 
@@ -63,6 +63,21 @@ open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibil
 ---
 
 ## Unfinished Features
+
+### Todo: shrink the system prompt / make room for user input (not started, logged 2026-10-06)
+**Why:** chat context is 4096 tokens (`generate_response`, llm.rs). The system prompt is ≈1,600 tokens (estimate) and 512 are reserved for the reply, leaving ≈2,000 for the conversation + pasted text. The **entire chat history is sent every turn and never trimmed**; when prompt + history + 512 > 4096, `generate_response` returns "Input is too long…" — long chats and big pastes eventually fail.
+
+**Ideas, roughly cheapest first:**
+1. **Measure first:** log the real token count of the system prompt / history / resource per request (tokenize in Rust — `str_to_token` is already there), so changes are judged on numbers, not the chars/4 estimate.
+2. **Trim history to a token budget:** keep the most recent turns that fit; drop (or later summarize) older ones. Fixes the hard failure on its own.
+3. **Conditional sections:** only include rule blocks when relevant — settings rules only when settings topics matched; how-to rules only when guides matched; `<replace>` editing rules only when selected/pasted text is attached; transcript-folder tool only when the message mentions transcripts/notes.
+4. **Fewer retrieved topics:** 6 settings + 4 how-tos → e.g. 4 + 3, or only topics above a score threshold (no block at all for small talk).
+5. **Tighten wording:** shorter tool descriptions, merge overlapping rules (several settings rules repeat "short / plain / quote on-screen words"), remove anything `LENGTH_RULES` already covers.
+6. **`FEATURES` on demand:** a `get_features` tool (or include FEATURES only when the message asks about the buddy itself — "can you…", "what can you do") instead of every turn (~275 tokens).
+7. **Bigger context:** Gemma 4 E4B supports far more than 4096 — try n_ctx 8192 and measure memory + first-token latency on Metal (KV cache grows linearly).
+8. **Speed, not size:** reuse llama.cpp's KV cache for the unchanged prompt prefix between turns (faster replies; doesn't free tokens).
+- Watch-outs: the small model follows rules placed last best (keep `LENGTH_RULES` last); re-run the settings/how-to/length checks in TESTS.md after any change.
+- Optional debug aid (offered, not built): print the fully assembled system prompt to the webview console per request.
 
 ### Backlog: support older macOS versions (13–25) properly (not started, logged 2026-10-05)
 Everything settings-related was built and verified on **macOS 26.6 only**. App minimum is 13.0 (`tauri.conf.json`); nothing checks the macOS version at runtime.
@@ -179,6 +194,7 @@ with a neutral surface (`available / auth_status / request_auth / start(record_p
 
 ## Known Issues / Quirks
 
+- **Buddy didn't know its own features** (2026-10-05, changed — untested live): asked "can you transcribe?", it didn't know — the prompt only described tools, and transcription/hold-to-talk/selection help aren't tools. Added `FEATURES` in `agent.ts` (right after the identity line): transcription (Transcript tab, where notes go), hold-to-talk + read-aloud, selected-text help, settings, how-tos, memory (≡ panel), dropped text files, runs privately on the Mac. ~275 tokens; system prompt now ≈1,600 of the 4,096-token context. **Keep FEATURES in sync when adding or removing user-facing features.**
 - **⌥Space didn't switch to the Chat tab while transcribing** (reported 2026-10-05, resolved — user confirmed working after the hardening; root cause not proven). Most likely the `hotkey-triggered` handler aborted on a failed `get_pending_text` await before reaching `setView("chat")`; it now switches tabs first and catches/logs that failure. User noticed it after starting a transcription while a reply was being read aloud. Tested that combination (TTS via voice.m + meeting mic via capture.m on Bluetooth): no engine rebuild loop, but a one-off ~0.6 s main-thread stall when the mic starts during speech (⌥Space pressed in that window is delayed, not lost). If it recurs: check for `[hotkey] selection captured` in the terminal and `get_pending_text failed` in the webview console.
 - **No visual cue for hold-to-talk during a meeting** (2026-10-05, changed — untested live). User confirmed holding ⌥Space while transcribing works, but the listening card lives on the Chat tab, so on the Transcript tab nothing showed. Now `hotkey-triggered`, `voice-preparing` and `voice-listening` all switch the chat to the Chat tab (`setView("chat")`). The Chat tab shows the same pulsing red dot while hold-to-talk is live (`voicePhase === "listening"`, not during "getting ready"). The Transcript tab shows a pulsing red dot (`chat-tab-rec`, `--hot-mic`) while a meeting is recording: initial state from `is_transcribing`, updated on `transcription-started` / `transcription-stopped`, re-queried on `transcription-error`.
 - **System "ding" when the chat came up** (2026-10-05, fixed for native apps). Not an AI Buddy sound: with nothing selected, selection capture fell back to posting ⌘C, and in standard Mac apps (Terminal, TextEdit, Notes…) Copy is disabled with no selection — pressing a disabled menu item's shortcut makes macOS beep. Now when the focused element is a native text control (`AXTextArea` / `AXTextField`) and `AXSelectedText` succeeds but is empty, capture trusts it and skips the ⌘C fallback (also removes the 0.5 s clipboard wait there). Fallback kept for web/Electron content where AX often can't see selections (those apps don't beep). Verified on Terminal with the app's real capture code: no selection → skipped; selection → returned. Remaining risk: an app whose text control reports "" while something *is* selected would now lose that capture — watch the `[hotkey]` log if a selection isn't picked up.
