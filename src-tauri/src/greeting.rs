@@ -112,7 +112,7 @@ fn refresh(app: &AppHandle) -> Result<(), String> {
         params![CACHE_KEY, value],
     )
     .map_err(|e| e.to_string())?;
-    eprintln!("[greeting] cached: {text}");
+    eprintln!("[greeting] cached ({} chars)", text.chars().count());
     Ok(())
 }
 

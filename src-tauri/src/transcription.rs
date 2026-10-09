@@ -953,7 +953,7 @@ fn save_transcript(app: &AppHandle) {
         .unwrap_or_else(SystemTime::now);
 
     let subject = generate_subject(app, &segments);
-    eprintln!("[AiBuddy] transcript save: subject = {subject:?}");
+    eprintln!("[AiBuddy] transcript save: subject generated ({} chars)", subject.chars().count());
 
     let summary = generate_summary(app, &segments);
     eprintln!("[AiBuddy] transcript save: summary = {} chars", summary.len());

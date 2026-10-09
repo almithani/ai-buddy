@@ -1,6 +1,6 @@
 # AI Buddy — Tests
 
-Last updated: 2026-10-05
+Last updated: 2026-10-09
 
 How to check the app still works: automated tests first, then the macOS-dependent
 dev checks, then manual checklists per feature. Record anything that fails as a
@@ -117,7 +117,7 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] Hold ⌥Space, let go of ⌥ BEFORE Space, then press ⌥Space again later → the chat still responds (log may show `previous ⌥Space release was missed`)
 - [ ] Hold ⌥Space over Terminal or Chrome → the chat appears and stays visible the whole time (no flash away and back)
 - [ ] Tap ⌥Space over Terminal, then immediately type a few letters → they appear in the chat input, NOT in Terminal
-- [ ] Press ⌥Space in Terminal / TextEdit / Notes with NOTHING selected → no system "ding" (only the pop when holding); log shows `skipping ⌘C fallback`
+- [ ] Press ⌥Space in Terminal / TextEdit / Notes with NOTHING selected → no system "ding" (only the pop when holding); log shows `selection captured in …: 0 chars` quickly (well under 0.5 s — no clipboard wait)
 - [ ] Select text in TextEdit or Notes, press ⌥Space → still captured (summarize/edit offer)
 - [ ] Select text on a web page in Chrome or Safari, press ⌥Space → still captured (uses the clipboard fallback)
 - [ ] With Bluetooth headphones, hold ⌥Space → at ~⅓ s a GREY card says "Getting the microphone ready… keep holding", then it turns RED (red tint, red border, red title, pulsing red dot) with "Listening…" and the pop; text doesn't jump when it switches. Check in both Light and Dark mode.
@@ -182,5 +182,7 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] Install a NEW build over an old one (unsigned) → expect lost Accessibility permission until removed + re-added (goes away once builds are Developer ID signed)
 - [ ] `npm run tauri build` → `.dmg` builds; installed app launches from Finder (bundled dylibs found)
 - [ ] `npm run build:universal` → `AI Buddy_<ver>_universal.dmg`; `lipo -archs` on `Contents/MacOS/aibuddy` and both `Contents/Frameworks/*.dylib` shows `x86_64 arm64`
+- [ ] Logs contain no private content: after selecting text + ⌥Space, holding ⌥Space and talking, and a transcription save, the terminal shows only counts/timings (`… N chars`, `subject generated (N chars)`), never the selected text, what you said, the greeting or the meeting subject
 - [ ] Built app actually launches: `codesign --verify --deep --strict "…/AI Buddy.app"` passes AND running `…/AI Buddy.app/Contents/MacOS/aibuddy` from Terminal for a few seconds shows no `Library not loaded` / code-signature errors (a signing change once made every launch fail)
-- [ ] **On an Intel Mac:** installs and opens (right-click → Open while unsigned); onboarding + model download; model loads (watch for a GPU/Metal load failure); chat replies (note speed); settings help + ring; ⌥Space tap + hold (does hold-to-talk work or say "needs macOS 26"?); meeting transcription
+- [ ] **On an Intel Mac:** installs and opens (right-click → Open while unsigned); onboarding + model download; model loads — run from Terminal and confirm `[llm] loading model (CPU only — Intel)`; asking a question does NOT crash and gets a reply (note speed); settings help + ring; ⌥Space tap + hold (does hold-to-talk work or say "needs macOS 26"?); meeting transcription
+- [ ] On Apple Silicon after this change: Terminal shows `[llm] loading model (GPU)` and replies are as fast as before

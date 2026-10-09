@@ -344,11 +344,12 @@ pub fn run() {
                                     // 3. Capture selected text + diagnostic log
                                     let (text, debug) =
                                         accessibility::capture_selected_text_debug(&app.state::<PrevApp>());
+                                    // Counts only — the step log (`debug`) holds the selected
+                                    // text and clipboard contents, which must not be logged.
                                     eprintln!(
-                                        "[hotkey] selection captured in {:?}: {} chars\n{}",
+                                        "[hotkey] selection captured in {:?}: {} chars",
                                         pressed_at.elapsed(),
-                                        text.chars().count(),
-                                        debug.trim_end()
+                                        text.chars().count()
                                     );
                                     // 4. Store so ChatPanel can read reliably
                                     *app.state::<PendingText>().0.lock().unwrap() = PendingCapture { text, debug };

@@ -1,263 +1,223 @@
 # AI Buddy — Session State & Next Steps
 
-Last updated: 2026-10-06
+Last updated: 2026-10-09
+
+Legend: ✅ confirmed by the user in the app · ⏳ built and checked by tests/harnesses, not yet confirmed live
+
+---
+
+## Release plan (decided 2026-10-09)
+
+- **0.2 — alpha, Apple Silicon only, installed personally.** No Apple Developer ID / notarization: builds are ad-hoc signed (`signingIdentity: "-"`, `hardenedRuntime: false`), so each new build needs the Accessibility permission re-granted (remove + re-add) and a right-click → Open on first launch. Build: `npm run bump minor` (→ 0.2.0), then `npm run tauri build` (Apple Silicon) — or `npm run build:universal` if a universal dmg is wanted anyway. Commit + `git tag v0.2.0`.
+  - [x] Private-content logs removed (2026-10-09).
+  - [x] Mic permission text (`NSMicrophoneUsageDescription`, `src-tauri/Info.plist`) mentions holding Option-Space as well as meetings.
+  - [x] Keyboard focus after ⌥Space goes to the chat ✅ (real keyboard, 2026-10-09).
+  - [x] TASKS.md cleaned up (2026-10-09).
+- **0.3 — Intel support (universal build).** Confirm the CPU-only fix on the real Intel Mac; AVX2/FMA/F16C for the x86_64 llama.cpp build (speed); check hold-to-talk on Intel.
+- **Later — public release:** Apple Developer ID signing + notarization — set `hardenedRuntime` back to `true`, add the mic entitlement (`com.apple.security.device.audio-input`); permissions then survive updates and no right-click is needed.
+
+---
+
+## Open items
+
+**Not yet confirmed live** (⏳ — see the matching TESTS.md checklists):
+- Chat follows macOS display settings (text size, contrast, transparency, motion, light/dark). Also unconfirmed: which preference key the macOS 26 Text Size slider writes (both are read).
+- Everyday how-to guides (47 topics).
+- Instant personalised greeting.
+- Shorter replies (`LENGTH_RULES`).
+- Buddy knows its own features (`FEATURES`).
+- No system "ding" on ⌥Space in native apps.
+- Settings navigator extras: "already on" short-circuit, sub-page relaunch, `get_mac_info`.
+
+**Known gaps worth fixing soon:**
+- **Long chats eventually fail with "Input is too long…"** — history is never trimmed (see "Shrink the system prompt" below; step 2 alone fixes it).
+- **Read-aloud guard:** `speak_replies` was found set to `always` without the user remembering asking — only allow `set_voice_settings` when the message is actually about reading aloud / voice.
+- **Onboarding screens are dark-only** (`onboarding.css` and `AccessibilityPermission.tsx` still have dark-tuned literal colors; not converted to the theme tokens).
+- **Settings step wording written from memory, not probed** — spot-check: Night Shift "Schedule", Displays "Larger Text", Trackpad "Scroll & Zoom" → "Natural scrolling", Control Center → Battery "Show Percentage".
+- **Hold-to-talk edge:** pressing ⌥Space again within ~0.3 s of releasing can reset the shared `Heard` before the previous result is sent.
+- Not verified: speech recognition quality on Bluetooth in a real meeting; dictation + meeting mic open together on Bluetooth (user reports holding ⌥Space during a transcription "works well").
 
 ---
 
 ## What Works
 
-- **Onboarding flow**: welcome → model download → accessibility permission → ready
-- **Onboarding accessibility step** (2026-06-16, reworked): auto-skips when already trusted (mount-check → `onNext`); on Continue shows macOS's own AX prompt via `prompt_accessibility_permission` (`AXIsProcessTrustedWithOptions` + `kAXTrustedCheckOptionPrompt`) rather than blindly opening Settings; polls, and after ~5 s of no detection surfaces a "Restart AI Buddy to finish" button (`restart_app` → `app.restart()`) because Accessibility grants only take effect for a freshly-launched process. Restart is safe re-download-wise: `ModelDownload` auto-advances when the model already exists. NOTE: macOS has NO one-click "Allow" dialog for Accessibility (control-your-computer) — the Settings toggle is mandatory; the AX prompt is the closest official ask. `restart_app` does NOT use `app.restart()` (that calls `std::process::exit` → the aborting `__cxa_finalize_ranges` finalizers) — it spawns a fresh instance (`open -n <bundle>` bundled, or the dev binary) then `libc::_exit(0)` to skip finalizers.
-- **Model download**: streams from `unsloth/gemma-4-E4B-it-GGUF` (~5 GB), no HuggingFace login required
-- **LLM inference**: llama-cpp-2, Metal GPU acceleration, streaming tokens to chat UI
-- **Echo dedup (text-level)** (2026-06-18/19): on speakers, the mic re-hears participants → their words appear as both "Them" and "Me". `dedup_echo` in `transcription.rs` (run at the top of `save_transcript`, before diarization/subject/summary) drops a "me" segment when a nearby "them" segment is textually near-duplicate. Match = temporal proximity (|start_sec| ≤ 2.5 s, or ts_ms within 6 s) AND (token Jaccard ≥ 0.6 OR containment ≥ 0.8 OR **char-level similarity ≥ 0.72** via Levenshtein). The char-level check handles the two streams transcribing the same sound differently ("100th"↔"hundredth", "pumps"↔"palms"); guarded by normalized length ≥ 6 chars (not token count) so 2-word echoes qualify but "yes"/"ok" never do. Only "me" removed; self-gating (headphones → no match → no drops). 9 unit tests. Doesn't help true double-talk — that's the audio-AEC follow-up.
-- **Mic AEC: VPIO tried and REVERTED** (2026-06-18): to fix speaker-bleed (mic picking up other participants → labeled "Me"), tried `setVoiceProcessingEnabled:YES` on the mic input node. Result: it drastically ducked the mic — even lowered the **system** input level (visible in Sound settings) — so "Me" stopped transcribing. Reverted to raw mic. Lesson: macOS VPIO over-suppresses for this use and its AEC reference likely isn't other-app output anyway. **Real fix when revisited: software AEC** (WebRTC AEC3 / SpeexDSP) fed mic − the ScreenCaptureKit system audio we already capture as the reference; doesn't touch the system mic. Until then, headphones give clean Me/Them separation.
-- **Inline edit preserves line breaks** (2026-06-17): edited text used to lose paragraphs/line breaks because the model delivered it inside a JSON string (`replace_selected_text` tool args) — a 4B model keeps multi-paragraph JSON valid by collapsing it to one line. Fixed by carrying the replacement as RAW text between `<replace>…</replace>` tags (no JSON escaping): `parseEditBlock` in `agent.ts` extracts it verbatim (strips one leading/trailing newline) and routes it through the existing `replace_selected_text` handler; `visibleText` hides the block while streaming. `replace_selected_text` removed from the JSON tool list. Frontend-only.
-- **Inline edit paste fallback** (2026-06-17): editing highlighted text in browser/web fields (Gmail in Chrome) previously failed as "read-only" because `replace_selected_text` only did an AX write, which Chrome's web inputs reject even though they're user-editable. `replace_selected_text_impl` (`accessibility.rs`) now tries the AX write first (native apps like Mail), then falls back to **paste-over-selection**: save clipboard → set edited text → `activate_app(pid)` (NSRunningApplication) → `CGEventPostToPid(pid, ⌘V)` → restore clipboard. The agent's `__READ_ONLY__` branch is now a rare last resort (only when there's no target PID).
-- **Summarize feature** (2026-06-15, text-only; image/PDF later): (1) Chat — asking the droid to summarize attached/selected/pasted text produces a **streaming** bulleted summary directly (system-prompt guidance in `agent.ts`, no tool round-trip; resource text already reaches the LLM via `resourceContext`). (2) Paste — `onPaste` in ChatPanel captures *substantial* text (>200 chars or >2 lines) as a resource chip and injects "summarize or edit?" (short pastes pass through); ⌥Space over a highlight does the same via the `hotkey-triggered` listener. (3) Meeting minutes — saved `.md` now has `## AI-Generated Summary` (bulleted Key Points/Decisions/Action Items, generated at save via `transcription::generate_summary`) above `## Transcript`; the live "Meeting in progress" file shows a placeholder until Stop. Shared core: `llm::generate_text` (multi-line, n_ctx 4096, input-truncating) + `summarize_text` Tauri command (frontend/future image-PDF entry point). NOTE: both `generate_response` and `generate_text` set `with_n_batch(4096)` — the llama.cpp default n_batch (2048) is smaller than our n_ctx and asserts (`n_tokens_all <= n_batch`) on long prompts (a pasted article as chat context first exposed this).
-- **Stop sequences**: rolling buffer catches `<end_of_turn>` and `<start_of_turn>` even when generated as character tokens rather than the single special token
-- **SQLite memory**: `store_preference`, `get_all_preferences`, `delete_preference` — all compile and work (tested via devtools console)
-- **Agent loop**: TypeScript tool-calling loop wired into ChatPanel, up to 5 tool-call rounds
-- **Markdown rendering**: `react-markdown` in buddy bubbles — bold, lists, paragraphs, code blocks all render correctly
-- **Copy-paste**: chat bubbles have `user-select: text` so copying works
-- **Chat UI**: drag to move, close button, streaming cursor, typing indicator, file drop
-- **Instant, personalised greeting** (2026-09-24, built — untested live): the chat opens instantly with a cached greeting. `src-tauri/src/greeting.rs` generates one sentence from the user's rules (`generate_short_text`, 60 tokens) in the background whenever rules change (`store_preference`, `delete_memory`) and after the model loads (catch-up), and caches it as the hidden setting `_greeting` = `{rulesHash, text}`. `get_greeting` returns it only if the hash matches the current rules; otherwise ChatPanel shows the default "What can I help you with?" (`GREETING`), also used when there are no rules. `get_memory` hides `_`-prefixed setting keys (internal caches stay out of the Memory window and the agent prompt). Output is validated (≤160 chars, one line, no `<` tags) or discarded. Note: every rule change regenerates, even non-personality ones (e.g. transcript folder rules) — the prompt tells the model to ignore those. Logs: `[greeting] cached: …` / `[greeting] not regenerated: …`.
-- **Transcription engine (2026-06-12): SpeechAnalyzer on macOS 26+, SFSpeechRecognizer fallback below.** Production logs proved SFSpeechRecognizer runs ONE on-device task at a time — starting a lane's task evicted the other lane's within ~40 ms (`kAFAssistantErrorDomain 1110`, perfectly alternating in logs), making concurrent mic+system transcription impossible and causing the persistent text loss at speaker switches. The new engine: `src-tauri/src/speech_analyzer.swift` (compiled by `build.rs` via `xcrun swiftc -emit-library -static`, Swift runtime dylibs from `/usr/lib/swift`), two concurrent SpeechAnalyzer+SpeechTranscriber pipelines (officially supported; same config → shared backing model), volatile→finalized results map straight onto the `is_final` callback — NO gating/rotation/pending-flush needed. Runtime dispatch in `capture.m` (`AiBuddyAudioSink` protocol; `AiBuddyAnalyzerSink` forwards buffers to Swift; legacy `AiBuddySpeechLane` path kept for macOS 13–25, where all the gating/rotation/pending-flush machinery still applies). SpeechAnalyzer needs NO Speech Recognition TCC (auth_status reports "authorized" when available). On-device model via `AssetInventory`: `speech_assets_status` / `install_speech_assets` commands (`speech_assets.rs`, `speech-assets-progress` events); TranscriptPanel installs on first Start if needed (often already present via Dictation).
-- **Transcript panel**: real-time speech-to-text via Apple's on-device SFSpeechRecognizer (no model download, automatic punctuation). Two parallel recognizers: microphone (AVAudioEngine) labeled "Me", system audio (ScreenCaptureKit — meeting participants) labeled "Them". Live partial results shown italic, finalized into speaker-labeled, timestamped turns. Copy / →Chat output `Me: … / Them: …` format. Engine choice is Mac-only by design (decided 2026-06-10; a Windows/Linux port would need a different speech backend AND a new audio capture layer anyway)
-- **Transcript persistence**: Rust `TranscriptStore` (managed state) is the source of truth — final segments accumulate there; `get_transcript` command restores the panel on remount (tab switches previously destroyed the transcript). Cleared on Start (safe: previous transcript auto-saved on Stop)
-- **Unified memory store** (2026-06-11): single SQLite `memory` table — every row is a `rule` (freeform, consumed by the LLM via system prompt) or a `setting` (key-value, consumed by Rust, e.g. `transcript_dir`). One-time migration from the old `preferences`/`settings` tables runs in `init_db` (verified against the real db). One list in the Memory window (`describeMemory` in `src/lib/memory.ts` renders friendly labels); deleting a setting row reverts it to its default. Settings are also injected into the agent's system prompt, so the buddy can answer "where do you save my transcripts?"
-- **Transcript save failure handling** (2026-06-11): if the configured dir fails, the save falls back to the default dir; if both fail, `transcript-save-failed` is emitted and chat tells the user the transcript is still copyable from the Transcript tab. The store is never cleared on failure (only on the next Start). Save logs the resolved dir.
-- **Transcript auto-save**: on Stop, a background thread waits ~2.5 s for trailing finals, generates a 3–5 word subject via local Gemma (`llm::generate_short_text`, non-streaming; falls back to first words if model busy/unloaded), and writes a speaker-labeled markdown file. Default `~/Documents/AI Buddy Transcripts/YYYY-MM-DD HHMM - Subject.md` (no colons — illegal on macOS); collisions get " (2)". Settings in SQLite `settings` table: `transcript_dir`, `transcript_include_time` — changeable from chat via the agent's `set_transcript_settings` tool ("save minutes to my Desktop and omit the time")
-- **Transcription events in chat**: Rust emits `transcription-started` / `transcription-stopped` / `transcript-saved` (path payload); ChatPanel injects buddy messages without an LLM call. The saved-file message links via `aibuddy-reveal://<encoded path>` — a custom ReactMarkdown `a` component intercepts clicks and calls `reveal_in_finder` (`open -R`)
+### Chat, agent and model
+- **Onboarding** (welcome → model download → accessibility → ready). The accessibility step shows macOS's own prompt (`prompt_accessibility_permission`), polls, and after ~5 s offers "Restart AI Buddy". `restart_app` spawns a fresh instance (`open -n <bundle>`, or the dev binary) then `libc::_exit(0)` — NOT `app.restart()`, whose `exit()` runs the aborting `__cxa_finalize_ranges` finalizers. macOS has no one-click "Allow" for Accessibility; the AX prompt is the closest official ask.
+- **Model download**: `unsloth/gemma-4-E4B-it-GGUF` (~5 GB), no HuggingFace login. Stored at `~/Library/Application Support/com.aibuddy.app/models/gemma-4-E4B-it-Q4_K_M.gguf`.
+- **LLM inference** (llama-cpp-2): Metal GPU on Apple Silicon, **CPU only on Intel** (`USE_GPU` in `llm.rs`); streaming tokens to the chat. Stop sequences caught by a rolling buffer even when `<end_of_turn>` arrives as character tokens. `generate_response` / `generate_text` set `with_n_batch(4096)` (llama.cpp's default 2048 < n_ctx asserts on long prompts).
+- **Agent loop** (`agent.ts`): JSON tool calls, up to 5 rounds; tools: `read_file`, `store_preference`, `get_memory`, `set_transcript_settings`, `open_settings`, `show_howto`, `set_voice_settings`, `get_mac_info`; in-place edits via raw `<replace>…</replace>` blocks.
+- **System prompt** (`buildSystemPrompt`): identity → `FEATURES` (what the buddy can do — keep in sync, see CLAUDE.md) ⏳ → `TOOL_DOCS` + rules → memory rules/settings → top 6 settings topics + top 4 how-tos for this message → `LENGTH_RULES` last (≤3 sentences/steps, no preamble/closing line; summaries ≤5 bullets) ⏳. ≈1,600 tokens of the 4,096 context (estimate).
+- **Chat UI**: markdown bubbles (copyable), drag to move, file drop, single waiting indicator (typing dots — no empty bubble/cursor; also covers tool rounds), instant greeting.
+- **Instant personalised greeting** ⏳ (`greeting.rs`): generated once per rules change (`store_preference` / `delete_memory`, plus a catch-up after model load) and cached as hidden setting `_greeting` = `{rulesHash, text}`; shown only if the hash matches, else "What can I help you with?". Output validated (≤160 chars, one line, no `<`).
+- **Unified memory** (`memory.rs`): one SQLite `memory` table of `rule`s (go into the prompt) and `setting`s (read by Rust, e.g. `transcript_dir`, `speak_replies`); Memory panel (≡ button, `DetailPanel.tsx`) lists/deletes them with friendly labels (`describeMemory`). `_`-prefixed keys are internal caches, hidden from the panel and the prompt.
+- **`read_file`**: dropped text files are read into the conversation (images/PDFs are refused with a note; files truncated to 2,500 chars).
+- **Accessibility permission UX** ✅: when missing, the chat shows macOS's prompt plus clickable steps (`aibuddy-action://open-accessibility` → `com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility`, `aibuddy-action://restart`), and tells users to remove/re-add a stale entry. With a properly signed build the 2 s poll picks up the grant without a restart.
+
+### Selected text, inline edit, summarize
+- **⌥Space** ✅: the chat appears immediately (`show_chat_without_focus` → `orderFrontRegardless`), the selection is captured on a background thread, then the chat takes focus without dropping behind the other app (`focus_chat_keep_front`), switches to the Chat tab, and `hotkey-triggered` fires. Capture = `AXSelectedText` from the saved front-app PID; if empty in a native text control (`AXTextArea`/`AXTextField`) it's trusted (no ⌘C → no system ding ⏳); otherwise ⌘C clipboard fallback (web/Electron). Works in Terminal ✅ and Chrome ✅; not inside Claude Code (its TUI redraw clears the selection — accepted). A missed key-up can't disable later presses (physical Space check, `CGEventSourceKeyState`).
+- **Inline edit**: AX write first (native apps), then paste-over-selection fallback (save clipboard → set → activate app → `CGEventPostToPid(⌘V)` → restore) for web fields like Gmail.
+- **Summarize**: substantial pastes (>200 chars / >2 lines) and ⌥Space over a highlight become a resource chip + "summarize or edit?"; summaries stream as bullets.
+
+### Hold-to-talk voice (⌥Space held) ✅
+- Tap = chat as before (audio discarded). Hold ≥300 ms → grey "Getting the microphone ready… keep holding" card while the mic comes up (Bluetooth headsets take 1.3–1.9 s), then a red "Listening…" card + "pop" sound + red dot on the Chat tab; live words shown; release sends immediately. Letting go too early → "Keep holding ⌥Space until you hear the pop, then talk."
+- Own SpeechAnalyzer dictation lane (source 2, own `AVAudioEngine`) — works during meeting transcription ✅. Mic starts on key-down when permission is already granted (prewarmed spare lane), so the first words aren't lost; words kept per time range so a pause can't drop the first phrase; finish waits up to 4 s.
+- Bluetooth ✅: the tap uses the device's current format (`format: nil`) and rewires + restarts on `AVAudioEngineConfigurationChange` (headset call-mode switch); session registered before `engine.start()`.
+- Replies read aloud (`voice.m`, `AVSpeechSynthesizer`, system voice) when the question was spoken; `speak_replies` = voice (default) | always | never via `set_voice_settings` / Memory panel. Speech stops on the next ⌥Space or send.
+- macOS 26+ only (SpeechAnalyzer); older systems get "Talking to me needs macOS 26 or newer."
+- Diagnostics: `[voice] mic started …`, `dictation: mic started — <format>`, `audio device changed — restarted with …`, per-session `N buffers, peak level …`, counts-only `[voice] final … N chars` / `sending N chars`.
+
+### Settings navigator ✅ (97 topics)
+- User asks → buddy opens the exact System Settings page (deep link from a curated catalog; the LLM only picks a topic id), reads the control's current state, and draws a pulsing orange ring around it (`highlight` window: transparent, click-through, follows scrolling, hides after 20 s / on app switch / when the control vanishes). Repeat requests reopen the page every time ✅.
+- Catalog source of truth: `scripts/build-settings-catalog.py` → `src/lib/settingsCatalog.json` (shared by TS + Rust via `include_str!`; never hand-edit). Topics with no single ringable control (Dark Mode, Night Shift, privacy app lists, Storage, Time Machine) open the page with steps only.
+- Controls found by `AXIdentifier` (often equals the anchor name — language-independent) or by row label (English; the label is the `AXStaticText` on the same row). Label normalization handles "Wi‑Fi" (U+2011) and "Touch ID" (U+00A0).
+- Deep links don't navigate away from some sub-pages (e.g. Text Size) → `open_and_ring` verifies the control appears and relaunches System Settings once if it doesn't.
+- `AX_feature.*` anchors are the Accessibility **Shortcut** list, not feature pages (their checkboxes read 1 for everything) — VoiceOver uses `AX_VOICEOVER_ENABLED`.
+- Retrieval (`topicSearch.ts`): stemmed token overlap, keywords ×2, phrase bonus, synonym map; right topic in the model's top 6 for 30/30 test phrasings.
+- Guards in `agent.ts`: call `open_settings` every time; a no-tool reply that claims settings actions (`SETTINGS_CLAIM`) gets one nudge round; for settings-like messages round 0 isn't streamed (no flash-then-delete).
+- `get_mac_info` ⏳: macOS version, battery, Wi-Fi power, volume/mute (fixed read-only commands).
+- Verify after catalog edits or a macOS update: TESTS.md §2 (`--check`, `--pages` + probe + `--verify-controls`). Last full verification 2026-09-23: all 97 panes/anchors resolve, all 73 controls found.
+
+### Everyday how-to guides ⏳ (47 topics)
+- `scripts/build-howto-catalog.py` → `src/lib/howtoCatalog.json`; `show_howto` returns steps + spoken-friendly shortcut ("Shift-Command-5"), opens the related app only from catalog bundle ids (`howto.rs`, `open -b`; friendly error if e.g. Zoom isn't installed), cross-links settings topics. macOS 26: "open an app" uses the Apps app (Launchpad is gone). Check: `--check-howtos`.
+
+### Easy reading — follows macOS display settings ⏳
+- `display_prefs.{m,rs}`: text size from the content-size category (`com.apple.universalaccess` `FontSizeCategory.global` unless `DEFAULT`, else global `UIPreferredContentSizeCategoryName`; scale = body pt / 17, capped 2.0) via 1.5 s poll; contrast / transparency / motion via `NSWorkspace.accessibilityDisplayShould…` + change notification. Emits `display-prefs-changed` on change; resizes the chat to 360×520×scale.
+- Frontend (`displayPrefs.ts`): `data-contrast` / `data-transparency` / `data-motion` on `<html>`; `--ui-scale` CSS `zoom` on `#root` (chat only) with `calc(100vw / var(--ui-scale))` sizing (measured: plain `100vw` overflows 1.5× at zoom 1.5). Light/dark via `prefers-color-scheme` tokens in `app.css` (incl. `--hot-mic*`).
+
+### Meeting transcription ✅
+- **Engine**: SpeechAnalyzer on macOS 26+ (`speech_analyzer.swift`, built by `build.rs` with `swiftc -emit-library -static`), two concurrent lanes — mic ("Me", AVAudioEngine) and system audio ("Them", ScreenCaptureKit); legacy SFSpeechRecognizer lanes for 13–25 (`capture.m`; SFSpeechRecognizer runs only one on-device task at a time, hence the gating/rotation/pending-flush machinery there). On-device model via `AssetInventory` (`speech_assets.rs`).
+- **Panel + persistence**: live speaker-labeled turns; Rust `TranscriptStore` survives tab switches; cleared on Start. Transcript tab shows a red dot while recording ✅.
+- **Live notes file**: `YYYY-MM-DD HHMM - Meeting in progress.md` re-rendered on every final; on Stop → subject (local Gemma) → summary (map-reduce for long meetings) → speaker diarization → renamed `… - Subject.md` in `~/Documents/AI Buddy Transcripts` (configurable via chat: `transcript_dir`, `transcript_include_time`). Save falls back to the default folder; failures are reported in chat; empty sessions are discarded.
+- **Diarization**: sherpa-onnx (pyannote segmentation + 3D-Speaker CAM++) on the recorded "Them" WAV (resampled to 16 kHz, threshold 0.7, >24 speakers → keep "Them" and say so); models (~36 MB) download on demand. Pre-26 engine: no diarization.
+- **Echo dedup**: on speakers, "Me" segments that near-duplicate a nearby "Them" segment are dropped (`dedup_echo`; token Jaccard / containment / char-level similarity; 9 unit tests).
+- **Resilience**: lanes never kill the session on errors (cooldown + retry, chat warning); fatal errors still save; App Nap prevented during save (`ActivityGuard`); progress stages shown in the Transcript tab and once in chat; mic path rebuilds the engine on device changes (verified on Bluetooth).
+- Chat events: started (with live-file link) / stopped / saved (`aibuddy-reveal://` link → Finder) / warnings.
+
+### Build, packaging, versioning
+- `npm run tauri build` → Apple Silicon `.dmg` ✅. `npm run build:universal` → `AI Buddy_<ver>_universal.dmg` (`src-tauri/tauri.universal.conf.json` takes the already-universal sherpa/onnxruntime dylibs from `target/aarch64-apple-darwin/release/`); `npm run release:universal` = patch bump + universal build. Needs `rustup target add x86_64-apple-darwin` (installed).
+- Ad-hoc signing of the whole bundle as `com.aibuddy.app` (`signingIdentity: "-"`), hardened runtime off. Verified: `codesign --verify --deep --strict` passes; launches with no dyld errors.
+- Bundled dylibs in `Contents/Frameworks/` (+ `@executable_path/../Frameworks` rpath from `build.rs`); min macOS 13.0 for both slices (`tauri build` applies `minimumSystemVersion` even though `.cargo/config.toml` sets 15.0 for dev builds).
+- Versioning: `scripts/bump-version.mjs` keeps `tauri.conf.json` (canonical), `package.json` and `Cargo.toml` in sync. `npm run bump [patch|minor|major]` (no build), `npm run release[:minor|:major]` (bump + Apple Silicon build). Pre-build on purpose: Tauri reads the version when the build starts.
 
 ---
 
-## What Is NOT Working
+## Backlog / unfinished features
 
-### Highlighted text / accessibility (top priority)
-
-**Symptom**: When the user selects text in another app (e.g. Mail, Chrome) then clicks AI Buddy and asks it to edit the text, the agent reports "no focused text field" and does nothing.
-
-**Root cause**: Two compounding problems:
-1. **No accessibility permission on the dev binary** — The raw `target/debug/aibuddy` binary is not in `System Settings → Privacy & Security → Accessibility`. macOS blocks all AX calls without it. The bundled `.app` shows up automatically; the dev binary does not.
-2. **Focus shift** — When the user clicks the droid overlay, macOS shifts keyboard focus to the AI Buddy window. `AXFocusedUIElement` then points at AI Buddy's own text input, not the email the user had selected.
-
-**Fix already implemented** (code is written and compiles, not yet verified working):
-- On droid mousedown, `save_frontmost_app` is called — it captures the PID of whatever app was active
-- All AX read/write calls now use `AXUIElementCreateApplication(saved_pid)` to reach into that app even after it loses focus
-- Files changed: `src-tauri/src/accessibility.rs`, `src-tauri/src/lib.rs`, `src/components/Droid/DroidOverlay.tsx`
-
-**What still needs to happen**:
-1. Grant the dev binary accessibility permission (see instructions below)
-2. Test the end-to-end flow: select text in Mail → click droid → ask AI Buddy to edit → verify text gets replaced
-3. Debug if it still doesn't work (check if `save_frontmost_app` is firing at the right moment)
-
-**How to grant dev binary AX permission**:
-```
-# Open the Accessibility pane
-open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-# Click + and navigate to:
-# src-tauri/target/debug/aibuddy
-```
-
----
-
-## Unfinished Features
-
-### Todo: shrink the system prompt / make room for user input (not started, logged 2026-10-06)
-**Why:** chat context is 4096 tokens (`generate_response`, llm.rs). The system prompt is ≈1,600 tokens (estimate) and 512 are reserved for the reply, leaving ≈2,000 for the conversation + pasted text. The **entire chat history is sent every turn and never trimmed**; when prompt + history + 512 > 4096, `generate_response` returns "Input is too long…" — long chats and big pastes eventually fail.
+### Shrink the system prompt / make room for user input (not started, logged 2026-10-06)
+**Why:** chat context is 4096 tokens (`generate_response`). System prompt ≈1,600 tokens (estimate) + 512 reserved for the reply leaves ≈2,000 for conversation + pasted text. The **entire chat history is sent every turn and never trimmed**; when prompt + history + 512 > 4096, `generate_response` returns "Input is too long…".
 
 **Ideas, roughly cheapest first:**
-1. **Measure first:** log the real token count of the system prompt / history / resource per request (tokenize in Rust — `str_to_token` is already there), so changes are judged on numbers, not the chars/4 estimate.
+1. **Measure first:** log real token counts of system prompt / history / resource per request (`str_to_token` in Rust).
 2. **Trim history to a token budget:** keep the most recent turns that fit; drop (or later summarize) older ones. Fixes the hard failure on its own.
-3. **Conditional sections:** only include rule blocks when relevant — settings rules only when settings topics matched; how-to rules only when guides matched; `<replace>` editing rules only when selected/pasted text is attached; transcript-folder tool only when the message mentions transcripts/notes.
-4. **Fewer retrieved topics:** 6 settings + 4 how-tos → e.g. 4 + 3, or only topics above a score threshold (no block at all for small talk).
-5. **Tighten wording:** shorter tool descriptions, merge overlapping rules (several settings rules repeat "short / plain / quote on-screen words"), remove anything `LENGTH_RULES` already covers.
-6. **`FEATURES` on demand:** a `get_features` tool (or include FEATURES only when the message asks about the buddy itself — "can you…", "what can you do") instead of every turn (~275 tokens).
-7. **Bigger context:** Gemma 4 E4B supports far more than 4096 — try n_ctx 8192 and measure memory + first-token latency on Metal (KV cache grows linearly).
-8. **Speed, not size:** reuse llama.cpp's KV cache for the unchanged prompt prefix between turns (faster replies; doesn't free tokens).
-- Watch-outs: the small model follows rules placed last best (keep `LENGTH_RULES` last); re-run the settings/how-to/length checks in TESTS.md after any change.
-- Optional debug aid (offered, not built): print the fully assembled system prompt to the webview console per request.
+3. **Conditional sections:** settings rules only when settings topics matched; how-to rules only when guides matched; `<replace>` editing rules only when text is attached; transcript-folder tool only when transcripts are mentioned.
+4. **Fewer retrieved topics:** 6 + 4 → e.g. 4 + 3, or only above a score threshold.
+5. **Tighten wording:** shorter tool descriptions, merge overlapping rules, drop anything `LENGTH_RULES` covers.
+6. **`FEATURES` on demand:** a `get_features` tool, or include it only when the message asks about the buddy itself (~275 tokens).
+7. **Bigger context:** try n_ctx 8192; measure memory + first-token latency (KV cache grows linearly).
+8. **Speed, not size:** reuse llama.cpp's KV cache for the unchanged prompt prefix between turns.
+- Watch-outs: keep `LENGTH_RULES` last; re-run the settings/how-to/length checks in TESTS.md after any change. Optional debug aid (not built): print the assembled system prompt to the webview console.
 
-### Backlog: support older macOS versions (13–25) properly (not started, logged 2026-10-05)
-Everything settings-related was built and verified on **macOS 26.6 only**. App minimum is 13.0 (`tauri.conf.json`); nothing checks the macOS version at runtime.
+### Support older macOS versions (13–25) properly (not started, logged 2026-10-05)
+Everything settings-related was built and verified on **macOS 26.6 only**; nothing checks the macOS version at runtime.
 
-**How it behaves on older versions today (degrades, doesn't crash):**
-- Settings page opens correctly (pane ids stable since the macOS 13 System Settings redesign); deep-link **anchors** may not exist → page opens at the top instead of the exact section.
-- Ring + current-state reading: control ids/labels differ → no ring, no state; steps still shown.
-- Step wording follows macOS 26 labels → may be slightly off.
-- How-tos: `open_an app` uses the Apps app (26 only; Launchpad before), `find_password` uses Passwords (15+) → "isn't installed" note.
-- Hold-to-talk: SpeechAnalyzer is 26+ → "needs macOS 26" message. Text-size following reads a 26 setting → chat stays default size (contrast/transparency/motion/light-dark still work).
+**Behaviour on older versions today (degrades, doesn't crash):** settings page opens but anchors may be missing (lands at the top); no ring/state where control ids/labels differ; step wording follows 26 labels; how-tos using the Apps app (26) or Passwords (15+) say "isn't installed"; hold-to-talk says "needs macOS 26"; chat doesn't follow text size (contrast/transparency/motion/light-dark still work).
 
 **Plan:**
-1. Decide target versions (likely 14 Sonoma and 15 Sequoia; 13 if seniors on old Macs matter).
-2. Set up macOS VMs for each (UTM on Apple Silicon — free; one VM per major version).
-3. In each VM, run the existing checks (TESTS.md §2): `node scripts/dump-settings-anchors.mjs --check` (which panes/anchors exist) and the control probe + `--verify-controls` (which ring controls exist). Save each version's results as reference.
-4. Add per-version overrides to `scripts/build-settings-catalog.py` — e.g. an optional `versions: {"15": {anchor, control_id, control_label, steps}}` per topic, falling back to the 26 values — and the same idea for how-to `app`s (Launchpad / Keychain Access fallbacks).
-5. Runtime: read the major macOS version once (Rust, `sw_vers` or `NSProcessInfo.operatingSystemVersion`); `open_system_settings` / `open_howto_app` and the steps sent to the model pick the matching override. Keep the "LLM only picks a topic id" rule.
-6. Extend `--check` / `--verify-controls` to validate a catalog against a given version's dump, so each VM run says what still needs fixing.
-7. Optional: voice on 13–25 via the existing SFSpeechRecognizer fallback path (`capture.m`) for dictation; text-size following via whatever setting those versions use.
-8. Add per-version rows to TESTS.md (core settings flow + how-tos on each target version).
+1. Decide target versions (likely 14 and 15; 13 if seniors on old Macs matter).
+2. macOS VMs per version (UTM on Apple Silicon — free).
+3. In each, run TESTS.md §2 (`--check`, probe + `--verify-controls`); save results.
+4. Per-version overrides in `scripts/build-settings-catalog.py` (optional `versions: {"15": {anchor, control_id, control_label, steps}}`, falling back to 26), same idea for how-to `app`s (Launchpad / Keychain Access).
+5. Runtime: read the major macOS version once; `open_system_settings` / `open_howto_app` / steps pick the override. Keep "LLM only picks a topic id".
+6. Extend `--check` / `--verify-controls` to validate against a given version's dump.
+7. Optional: dictation on 13–25 via the SFSpeechRecognizer path; text size on those versions.
+8. Per-version rows in TESTS.md.
 
-### Easy reading, how-tos, hold-to-talk voice (in progress, started 2026-09-24)
-Plan: `~/.claude/plans/i-d-like-for-the-effervescent-octopus.md`. Build order A → B → C.
-- **A. Chat follows macOS display settings:** text size (content-size category → CSS `zoom` + chat window resize), Increase contrast, Reduce transparency, Reduce motion, Light/Dark (new light theme). Live updates via 1.5 s poll.
-  - [x] `display_prefs.{m,rs}` — text size = content-size category (`com.apple.universalaccess` `FontSizeCategory.global` unless `DEFAULT`, else global `UIPreferredContentSizeCategoryName`; category → scale by body pt / 17, capped 2.0); contrast/transparency/motion via `NSWorkspace.accessibilityDisplayShould…` + its change notification; 1.5 s poll (text size has no notification). Emits `display-prefs-changed` only on change; scale change resizes chat to 360×520×scale (clamped to screen). Standalone read verified (L / all off). Which key the Text Size slider writes is NOT yet confirmed — reading both covers either.
-  - [x] Light theme via `prefers-color-scheme` tokens in `app.css`; literal colors in ChatPanel/TranscriptPanel/DetailPanel CSS → tokens. Onboarding CSS/`AccessibilityPermission.tsx` still have a few dark-tuned literals (not converted).
-  - [x] `data-contrast` / `data-transparency` / `data-motion` on `<html>` (`src/lib/displayPrefs.ts`, all windows) + CSS overrides; `--ui-scale` zoom on `#root` (chat only). Measured in a real WKWebView: `100vw` inside `zoom:1.5` overflows 1.5× → `#root` size is `calc(100vw / var(--ui-scale))`.
-  - [ ] Live test: toggle each setting in System Settings and watch the chat
-- **B. Everyday how-to guides:** ~45 topics (screenshots, files, apps/windows, text, email, calls, photos, web, printing, USB, power, App Store). Same catalog + retrieval pattern as settings; `show_howto` tool; app opened only from catalog bundle ids.
-  - [x] Shared ranker `src/lib/topicSearch.ts` (`rankTopics`); `searchSettings` now wraps it — verified identical results on 32 queries before/after.
-  - [x] `scripts/build-howto-catalog.py` → `src/lib/howtoCatalog.json` (**47 topics**; shortcuts spelled out in words; `app` bundle ids; `settingsTopic` cross-links). `src-tauri/src/howto.rs` `open_howto_app(topic)` → `open -b` from the catalog only; friendly error when a third-party app (Zoom) isn't installed.
-  - [x] `show_howto` agent tool + "How-to guides that may be relevant" prompt block (top 4, alongside settings top 6). Retrieval: right guide in top 4 for 20/20 phrasings, first for 18/20; "make the text bigger" still ranks settings `text_size` first. `node scripts/dump-settings-anchors.mjs --check-howtos` → OK (all Apple apps present, cross-links resolve). macOS 26 note: Launchpad is gone — "open an app" uses the Apps app (`com.apple.apps.launcher`).
-  - [ ] Live test in the app
-- **C. Hold-to-talk voice:** tap ⌥Space = as today; hold ≥300 ms = listen (own SpeechAnalyzer dictation lane, macOS 26+), release = send immediately. Replies read aloud when the question was spoken (`speak_replies`: voice|always|never).
-  - [x] Swift: `AnalyzerLane.finish(timeout:)` (finalize + await last results, capped) and `aibuddy_dictation_start/stop` — own `AVAudioEngine` input tap + lane source 2, separate from meeting lanes. Returns -1 pre-26, -3 assets, -4 mic.
-  - [x] `src-tauri/src/voice.rs` — hotkey handler in lib.rs now calls `voice::key_down` (returns false on repeats) / `voice::key_up`. Hold ≥300 ms → start dictation on a thread; start/release race handled under one lock (whichever side sees the other stops the mic). `Heard` accumulates finals + volatile (2 unit tests). Events: voice-listening / voice-partial / voice-result / voice-unavailable / voice-blocked. `set_voice_blocked` (chat busy) prevents listening mid-reply — the hotkey-triggered handler no longer clears `busy` while a reply is streaming (it used to, which would have defeated the guard).
-  - [x] ChatPanel: listening banner with live words; `handleSend(spokenText?)` auto-sends on release via a ref (fresh state); empty → "didn't catch that"; assets missing → auto-install + message; mic denied → privacy hint; input read-only while listening, NBSPs stripped.
-  - [x] TTS: `voice.m` `AVSpeechSynthesizer` (system voice) via `speak_text` / `stop_speaking`; `plainForSpeech` strips markdown and turns line breaks into pauses. `speak_replies` setting (voice|always|never) via `set_voice_settings` tool; label in `memory.ts`. Speech stops on the next ⌥Space press or send.
-  - [ ] Live test (nothing here has run in the app yet — hold/release timing, mic permission prompt, live partials, spoken reply)
+### Intel (0.3)
+- **CPU-only fix** for "crashed on the first question" ⏳ — most likely llama.cpp's Metal backend on an Intel/AMD GPU with every layer offloaded (no crash log from the Intel Mac). Intel builds load with 0 GPU layers and `offload_kqv` / `op_offload` off; log `[llm] loading model (CPU only — Intel)`. Verified under Rosetta with the real model (loads 11.7 s, replies, no crash) — Rosetta can't reproduce the Intel-GPU crash itself. The Metal device is still initialized on Intel but does no work.
+- **Speed:** the x86_64 llama.cpp is built for baseline x86 (GGML_NATIVE/AVX/AVX2/FMA/F16C all OFF). Every Intel Mac that runs macOS 13+ (2017+) has AVX2 + FMA + F16C → enable them for the x86_64 build (needs per-target CMake flags for `llama-cpp-sys-2`).
+- Hold-to-talk (SpeechAnalyzer) on Intel: unknown.
 
-### Settings navigator for seniors (in progress, started 2026-09-23)
-Goal: a user asks "make the text bigger" / "turn on the screen reader" → the buddy opens the exact System Settings page and walks them through it in plain, warm, one-step-at-a-time language. Audience: seniors configuring accessibility.
-- **Scope v1:** open the page + guide only. NO auto-toggling settings, NO on-screen highlighting of controls (possible v2: point the droid at the control via AX).
-- **Coverage v1:** Vision (VoiceOver, Zoom, text size, display contrast/transparency, pointer size, Spoken Content), Hearing (Captions, Live Captions, hearing devices, flash screen), Basics (Wi-Fi, Bluetooth, Sound, Displays/brightness, Notifications).
-- **Design:** the 4B model can't be trusted to remember deep-link URLs or click paths, so knowledge lives in a curated table (`src/lib/settingsGuide.ts`: id → pane + keywords + steps); the model only picks a topic ID. Rust `open_system_settings(pane)` uses a fixed allow-list of `x-apple.systempreferences:` URLs (the LLM never passes a raw URL to `open`).
-- Checklist:
-  - [x] Deep-link anchors: taken from System Settings' own list (`osascript -e 'tell application "System Settings" to get name of every anchor of pane id "com.apple.Accessibility-Settings.extension"'`), NOT guessed. Accessibility anchors on 26 are names like `AX_FONT_SIZE`, `AX_feature.voiceOver`, `AX_FEATURE_CAPTIONS`, not the older `?VoiceOver` / `?Zoom` style. `?AX_FONT_SIZE` confirmed to land on Display → Text size. Re-run that command if a macOS update breaks a link.
-  - [x] `src/lib/settingsGuide.ts` — 15 curated topics (ids match the Rust allow-list) + `settingsGuideSummary()` for the prompt
-  - [x] Rust `open_system_settings(pane)` in `lib.rs` — `match` allow-list, unknown → `Err`, registered. (No anchor fallback needed: anchors come from the OS list; a bad anchor still opens the right pane.)
-  - [x] `open_settings` agent tool in `agent.ts` — returns steps (+ VoiceOver caution: ⌘F5 turns it off) as tool_result; model's second round phrases them
-  - [x] Senior-friendly prompt rules (short sentences, quote on-screen labels, caution first, invite follow-up, never invent a topic)
-  - [ ] **End-to-end test in `npm run tauri dev`** (covers v1 + v2) — not yet run live. Check: the ring appears around the right control and follows scrolling; AI Buddy doesn't steal focus from System Settings; the reply mentions current state; "already on" case skips the steps; the stuck-sub-page relaunch works (open Text size, then ask for Bluetooth); off-list request invents nothing; `get_mac_info` answers "is my Mac up to date?".
-  - [ ] Step wording now uses probed labels for the ringed control, but secondary instructions (e.g. Night Shift's 'Schedule', Displays 'Larger Text' option, Trackpad 'Scroll & Zoom' tab, Control Center battery 'Show Percentage') are from knowledge, not probed — spot-check them.
-- **v2 (2026-09-23, built — awaiting live test in the app)** — goal widened to "help anyone use their Mac". Scope: ALL of System Settings (45 panes / ~558 anchors on 26.6), live current state, and a ring drawn around the exact control.
-  - Constraint: chat n_ctx is 4096, so 100+ topics can't be listed in the prompt → per-message keyword retrieval injects the top ~6.
-  - [x] Shared catalog `src/lib/settingsCatalog.json` (read by TS + Rust via `include_str!`); `open_system_settings(topic)` moved to `src-tauri/src/settings_nav.rs`, looks up pane/anchor by topic id (no hand-written match). Rust unit test checks the JSON parses with unique ids.
-  - [x] `scripts/dump-settings-anchors.mjs` — JXA dump (~1 s) → `scripts/settings-anchors.json`; `--check` verifies every catalog pane/anchor exists + no duplicate ids. Run it after every macOS update.
-  - [x] Retrieval (`searchSettings` in `settingsGuide.ts`: stemmed token overlap, keywords ×2, phrase bonus, small synonym map) — top 6 for (this message + previous user turn) injected into the system prompt; unknown topic → nearest 5. 11/11 sample phrasings rank the right topic first (ad-hoc esbuild script, not a committed test).
-  - [x] `settings_nav.m` (ObjC, compiled with capture.m) + `settings_nav.rs` — find the control via AX in System Settings, read its state (switch on/off, slider %, popup value, radio selected), `AXScrollToVisible`, track its frame. Compiles; NOT yet run in the app.
-    - Findings from probing macOS 26.6 (2026-09-23): (1) many controls' **`AXIdentifier` equals the deep-link anchor name** (`AX_FONT_SIZE`, `AX_CURSOR_SIZE`, `AX_INCREASE_CONTRAST`…) → match by id: language-independent. (2) Other panes (Bluetooth, Keyboard, Lock Screen, Wi-Fi) have NO identifiers → match by row label (English only). Row labels are not on the control: checkboxes/sliders have empty title/description; the label is the `AXStaticText` on the same row (closest vertical centre, to the left). (3) **Deep links do NOT navigate away from some sub-pages** (landing on `?AX_FONT_SIZE` opens the Text Size sub-page; later links are ignored) → `open_and_ring` verifies the control appears; if System Settings was already open and it doesn't, quit + relaunch once. With no control to verify, relaunch up front when already running. (4) `AX_feature.voiceOver`-style anchors are the **Accessibility Shortcut list**, not the feature pages — their checkboxes read 1 for every feature. Using them would make the buddy wrongly say "VoiceOver is already on". Real VoiceOver switch: `AX_VOICEOVER_ENABLED`.
-    - Dev probe: `scripts/settings-controls-probe.swift` + `scripts/settings-probe-pages.txt` (62 pages, account pages excluded) → records id/role/label/value per control. Output stays OUT of the repo (contains this Mac's apps/devices/networks). ~5 min, takes over System Settings while running.
-  - [x] `highlight` window (tauri.conf.json, `src/components/Highlight/`) — transparent, click-through, non-focusable pulsing orange ring; shown via `orderFrontRegardless` so AI Buddy never steals focus from System Settings. A 250 ms ticker follows the control (scroll/move); hides after 20 s, when the control vanishes, when a newer topic opens, or when an app other than System Settings / AI Buddy comes to the front. Respects reduced motion. Compiles; NOT yet seen on screen. Multi-display with mixed scale factors untested.
-  - [x] Catalog expanded to **97 topics** (vision, hearing, motor, connect, sound, display, appearance, desktop, trackpad, keyboard, battery, security, privacy, general, notifications). Source of truth is `scripts/build-settings-catalog.py` → generates `src/lib/settingsCatalog.json` (don't hand-edit the JSON). Steps use Apple's real on-screen labels from the probe. Topics whose page has no single ringable control (Dark Mode — image radio buttons with empty labels; Night Shift; privacy app lists; Storage; Time Machine) open the page with steps only.
-    - Verify after any catalog edit or macOS update: `python3 scripts/build-settings-catalog.py && node scripts/dump-settings-anchors.mjs --check`, then `node scripts/dump-settings-anchors.mjs --pages | <probe> > /tmp/x.jsonl && node scripts/dump-settings-anchors.mjs --verify-controls /tmp/x.jsonl`.
-    - **Verified 2026-09-23:** all 97 panes/anchors resolve; all 73 controls found on their pages (`--verify-controls`); ObjC finder smoke-tested standalone (text size slider %, VoiceOver off, Wi‑Fi on, Touch ID on, display-off popup value all read correctly). Retrieval: right topic in the model's top 6 for 30/30 everyday phrasings, first for 25/30.
-    - The `Dock` anchor on Desktop & Dock lands on an empty view → Dock topics use the pane without an anchor. Software Update's "Update Now" only exists when an update is pending → no control (steps only).
-    - Label gotchas: "Wi‑Fi" uses U+2011 (non-breaking hyphen), "Touch ID" uses U+00A0 (non-breaking space) — matcher normalizes dashes, curly quotes and NBSPs (ObjC `NormalizeLabel`, mirrored in the verify script). Displays controls share the id `ambienceSection` → matched by label. Some pages (Trackpad, Control Center, Time Machine, Storage) populate late — find timeout is 4 s.
-  - [x] `get_mac_info` tool (`settings_nav.rs`) — macOS version (`sw_vers`), battery (`pmset -g batt`), Wi-Fi power (`networksetup`), volume/mute (`osascript get volume settings`). Fixed read-only commands; no model input in args. Compiles; not yet exercised from chat.
-
-### Per-platform transcription backends (planned, not started)
-Today transcription is macOS logic inline-`#[cfg]`-gated in `transcription.rs` (the `extern "C"` FFI, `on_speech`, and the macOS branches of start/stop/auth); non-mac returns "only supported on macOS". Compiles everywhere but there's no clean place a Windows/Linux impl would slot in.
-Planned structure (Mac stays as-is, just moved): a compile-time-selected `backend` module —
-```
-#[cfg_attr(target_os = "macos",   path = "transcription/macos.rs")]
-#[cfg_attr(target_os = "windows", path = "transcription/windows.rs")]
-#[cfg_attr(not(any(...)),         path = "transcription/linux.rs")]
-mod backend;
-```
-with a neutral surface (`available / auth_status / request_auth / start(record_path) / stop / assets_*`). Platform-agnostic core (TranscriptStore, save_transcript, render_markdown, generate_subject/summary, live file, and a new `deliver_segment(source,text,is_final,start,end)` seam the backends call) stays in `transcription.rs`; the `#[tauri::command]`s lose their inline `#[cfg]`. `build.rs` gains windows/linux arms (stubbed). Follow `accessibility.rs`'s `mod mac` precedent. Diarization (`sherpa-rs`) is already cross-platform — only the audio recording feeding it is Mac-specific. Real Windows (WASAPI loopback + STT) / Linux (PipeWire monitor + STT) capture engines are separate future work.
+### Feature ideas (from the 2026-09-24 brainstorm, not started)
+- Point at controls in any app (generalise the settings ring via AX).
+- See the screen (needs image input below) — "what is this pop-up?", "is this a scam?"; ask before every capture, never keep it.
+- Guided troubleshooting (no sound, Wi-Fi, printer, slow Mac) using `get_mac_info`.
+- Scam and safety help.
+- Do it for them (safe, reversible settings only, with a confirmation; never VoiceOver/passwords/deletion).
+- Remote help from family (share a summary of where they got stuck).
+- Remembering progress ("last week you set up larger text…").
+- Use the Mac's built-in mic when Bluetooth headphones are connected (no call-mode switch → faster, keeps music quality).
+- Software echo cancellation for meetings on speakers (WebRTC AEC3 / SpeexDSP with the captured system audio as reference) — macOS VPIO was tried and reverted (it ducked the system mic level).
 
 ### Image input via Gemma 4 multimodal (not started)
-- Gemma 4 is multimodal but our llama-cpp-2 integration is text-only
-- Requires:
-  1. Download the `.mmproj` (multimodal projection) file alongside the main GGUF
-  2. Load the clip/vision model in Rust at startup
-  3. Encode dropped images via llama-cpp's LLaVA API into embeddings
-  4. Pass encoded image embeddings into the context before text tokens
-  5. Frontend: send image as base64 or raw bytes from the resource chip to Rust
-- Reference: llama-cpp LLaVA C API (`llava_image_embed_make_with_bytes`, `llava_eval_image_embed`)
+Download the `.mmproj` alongside the GGUF → load the vision projector → encode images (llama.cpp LLaVA API: `llava_image_embed_make_with_bytes`, `llava_eval_image_embed`) → feed embeddings before text → frontend sends image bytes from the resource chip.
 
+### Detail panel — History and About tabs (not started)
+The Memory panel exists (≡ button, `DetailPanel.tsx`); History and About/settings tabs from the original spec don't.
 
-### Detail Panel (not started)
-- Spec calls for a side panel with: Memory tab (view/edit/delete rules), History, About/settings
-- The `[⊞]` button in ChatPanel.tsx exists but does nothing
-- New component needed: `src/components/DetailPanel/`
-
-### Versioning (2026-06-17)
-- `npm run release` (patch), `release:minor`, `release:major` → `scripts/bump-version.mjs` bumps the version in `tauri.conf.json` (canonical bundle version), `package.json`, and `Cargo.toml` in sync, THEN runs `tauri build`.
-- `npm run bump [patch|minor|major]` bumps without building.
-- Deliberately a pre-build script, NOT a `beforeBuildCommand` hook: Tauri reads `tauri.conf.json`'s version when the build starts, so an in-build hook would only affect the *next* build.
-- `npm run tauri build` directly still works but does NOT bump (use it for test builds).
-
-### Packaging / Distribution (working as of 2026-06-11)
-- `npm run tauri build` → `.dmg` at `src-tauri/target/release/bundle/dmg/` (~3.7 MB; Gemma model downloads on first launch, not bundled)
-- `minimumSystemVersion: "13.0"` in tauri.conf.json is REQUIRED — without it tauri sets MACOSX_DEPLOYMENT_TARGET=10.13 and llama.cpp's `std::filesystem` (10.15+) fails to compile. Gotcha: CMake caches the deployment target — if the error persists after fixing the conf, `rm -rf src-tauri/target/release/build/llama-cpp-sys-2-*`
-- Bundled Info.plist verified: mic + speech usage strings present, LSMinimumSystemVersion 13.0
-- Unsigned: recipients must right-click → Open (or `xattr -cr`) to bypass Gatekeeper. Apple Developer ID + notarization needed for real distribution
-- **Universal (Intel + Apple Silicon) build** (2026-10-06, built — Intel untested): `npm run build:universal` (test build, no version bump) / `npm run release:universal` (patch bump + build). Needs `rustup target add x86_64-apple-darwin` (installed). Universal builds compile per target into `target/<triple>/release/`, so `src-tauri/tauri.universal.conf.json` overrides `bundle.macOS.frameworks` to take the sherpa/onnxruntime dylibs from `target/aarch64-apple-darwin/release/` (already universal). Plain `npm run tauri build` / `npm run release` are unchanged (Apple Silicon only). Output: `src-tauri/target/universal-apple-darwin/release/bundle/dmg/AI Buddy_<ver>_universal.dmg` (0.1.1: dmg 23 MB, app 75 MB). Verified: main binary + both dylibs contain x86_64 + arm64; rpath `@executable_path/../Frameworks`; min macOS 13.0 for both slices (dylibs 10.14–11.0); Info.plist has mic usage string.
-- Note: `.cargo/config.toml` sets `MACOSX_DEPLOYMENT_TARGET = "15.0"` (dev builds), but `tauri build` applies `minimumSystemVersion` 13.0 to the bundled binary — release binaries target 13.0 (checked with `vtool -show-build`).
-- Mic permission prompt text still says it's "to capture your side of meetings" — the first ⌥Space hold also triggers it; consider mentioning talking to AI Buddy.
-- Intel caveats (unverified): LLM runs largely on CPU (slow); `with_n_gpu_layers(9999)` may fail to load on weak Intel GPUs — no CPU-only fallback yet; SpeechAnalyzer (hold-to-talk) on Intel unknown.
-
-### `read_file` tool (stubbed)
-- `agent.ts` returns `"(file reading not yet implemented)"` — file drop UI works but reading content does not
+### Per-platform transcription backends (planned, not started)
+Move macOS transcription out of inline `#[cfg]` in `transcription.rs` into a compile-time-selected `backend` module (`transcription/{macos,windows,linux}.rs`) with a neutral surface (`available / auth_status / request_auth / start(record_path) / stop / assets_*`) and a `deliver_segment(...)` seam; core (store, save, render, subject/summary, live file) stays shared. Follow `accessibility.rs`'s `mod mac` precedent. Real Windows (WASAPI + STT) / Linux (PipeWire + STT) engines are separate work.
 
 ---
 
-## Known Issues / Quirks
+## Known issues & gotchas (still relevant)
 
-- **Accessibility permission lost after replacing the app** (2026-10-06). Not a code bug: TCC ties the grant to the code signature; unsigned builds get a new ad-hoc signature every build, so System Settings keeps showing the *old* build's entry as on while the new build is untrusted. Workaround: remove AI Buddy from the Accessibility list (–), re-add, then quit/reopen (or `tccutil reset Accessibility com.aibuddy.app`). **Real fix: Developer ID signing** (stable signature → grants survive updates) — moves signing up to a release blocker for seniors. UX fix made: the chat's "I need Accessibility permission" message now triggers macOS's own prompt (`prompt_accessibility_permission`) and has clickable steps — `aibuddy-action://open-accessibility` → `request_accessibility_permission`, `aibuddy-action://restart` → `restart_app` (grants only apply after a relaunch). `request_accessibility_permission` now opens `com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility` (verified anchor) instead of the pre-macOS-13 `com.apple.preference.security` URL. Then (same day): user hit a loop — enabled in Settings → restart → still untrusted. Root cause: the bundle was **not signed at all** (only the linker's ad-hoc signature on the binary, identifier `aibuddy-<hash>`), so TCC had no stable identity to match. Fix: `"signingIdentity": "-"` in `tauri.conf.json` → `tauri build` ad-hoc signs the whole bundle as `com.aibuddy.app` (verified: `codesign --verify --deep --strict` valid, frameworks signed, designated requirement = per-arch cdhash). Grants now stick for a given build; each NEW build still has a new cdhash → permission must be re-granted after updates until a real certificate is used (self-signed cert = stable on testers' Macs; Developer ID + notarization = proper release). The chat message also tells users to remove (–) and re-add a stale entry.
-  - Observed with the properly signed build (2026-10-06): after switching the permission on, the chat's 2 s poll detected it and showed the greeting **without a restart**. The older "grants only apply after a relaunch" note came from the unsigned/dev binary. Restart link kept as a fallback (wording unchanged by choice).
-  - ⚠️ That first signed build **crashed at launch** ("AI Buddy cannot be opened because of a problem"): ad-hoc signing also turned on the **hardened runtime**, whose library validation rejects the bundled sherpa/onnxruntime dylibs (crash report: `Library not loaded: @rpath/libonnxruntime… not valid for use in process … different Team IDs`). Fixed with `"hardenedRuntime": false` in `tauri.conf.json` (flags now `0x2(adhoc)`); verified by launching the built bundle for 6 s (Metal + speech lane up, no dyld errors). **When moving to Developer ID + notarization, set `hardenedRuntime` back to true** (notarization requires it; all dylibs get the same Team ID then, so validation passes) and add any needed entitlements (mic: `com.apple.security.device.audio-input`).
-- **Buddy didn't know its own features** (2026-10-05, changed — untested live): asked "can you transcribe?", it didn't know — the prompt only described tools, and transcription/hold-to-talk/selection help aren't tools. Added `FEATURES` in `agent.ts` (right after the identity line): transcription (Transcript tab, where notes go), hold-to-talk + read-aloud, selected-text help, settings, how-tos, memory (≡ panel), dropped text files, runs privately on the Mac. ~275 tokens; system prompt now ≈1,600 of the 4,096-token context. **Keep FEATURES in sync when adding or removing user-facing features.**
-- **⌥Space didn't switch to the Chat tab while transcribing** (reported 2026-10-05, resolved — user confirmed working after the hardening; root cause not proven). Most likely the `hotkey-triggered` handler aborted on a failed `get_pending_text` await before reaching `setView("chat")`; it now switches tabs first and catches/logs that failure. User noticed it after starting a transcription while a reply was being read aloud. Tested that combination (TTS via voice.m + meeting mic via capture.m on Bluetooth): no engine rebuild loop, but a one-off ~0.6 s main-thread stall when the mic starts during speech (⌥Space pressed in that window is delayed, not lost). If it recurs: check for `[hotkey] selection captured` in the terminal and `get_pending_text failed` in the webview console.
-- **No visual cue for hold-to-talk during a meeting** (2026-10-05, changed — untested live). User confirmed holding ⌥Space while transcribing works, but the listening card lives on the Chat tab, so on the Transcript tab nothing showed. Now `hotkey-triggered`, `voice-preparing` and `voice-listening` all switch the chat to the Chat tab (`setView("chat")`). The Chat tab shows the same pulsing red dot while hold-to-talk is live (`voicePhase === "listening"`, not during "getting ready"). The Transcript tab shows a pulsing red dot (`chat-tab-rec`, `--hot-mic`) while a meeting is recording: initial state from `is_transcribing`, updated on `transcription-started` / `transcription-stopped`, re-queried on `transcription-error`.
-- **System "ding" when the chat came up** (2026-10-05, fixed for native apps). Not an AI Buddy sound: with nothing selected, selection capture fell back to posting ⌘C, and in standard Mac apps (Terminal, TextEdit, Notes…) Copy is disabled with no selection — pressing a disabled menu item's shortcut makes macOS beep. Now when the focused element is a native text control (`AXTextArea` / `AXTextField`) and `AXSelectedText` succeeds but is empty, capture trusts it and skips the ⌘C fallback (also removes the 0.5 s clipboard wait there). Fallback kept for web/Electron content where AX often can't see selections (those apps don't beep). Verified on Terminal with the app's real capture code: no selection → skipped; selection → returned. Remaining risk: an app whose text control reports "" while something *is* selected would now lose that capture — watch the `[hotkey]` log if a selection isn't picked up.
-- **"Getting ready" vs live-mic cards looked alike** (2026-10-05, changed — untested live): the preparing card is now neutral (input-grey background, normal border, grey dot); the live card (`chat-listening-live`) is red — `--hot-mic-soft` background, 2 px `--hot-mic-border`, red title, pulsing `--hot-mic` dot. New `--hot-mic*` tokens in `app.css` for dark, light, Increase contrast and Reduce transparency.
-- **Chat flashed away and back when holding ⌥Space** (reported 2026-10-05, fixed). Caused by the "show first, capture in background" change: the chat was shown with `orderFrontRegardless` (AI Buddy inactive), then Tauri's `set_focus` did `makeKeyAndOrderFront` *before* activating — for an inactive app that orders the window behind the active app's windows until activation completes (macOS can delay that while keys are held). Now the hotkey path uses `focus_chat_keep_front` → `aibuddy_focus_window_keep_front` (settings_nav.m): orderFrontRegardless → activate → makeKeyAndOrderFront → orderFrontRegardless. Verified with a simulated 1.5 s ⌥Space hold sampling `CGWindowListCopyWindowInfo` every 50 ms: chat in front from 62 ms on, never behind Terminal. **Open question:** in that simulated test AI Buddy never became the active app (Terminal stayed frontmost), so keystrokes would go to Terminal. Possibly only because the key events were synthetic (macOS 14+ cooperative activation); needs a real-keyboard check. If real presses also fail to take focus, the robust fix is a non-activating panel (NSPanel), as launcher apps use.
-- **⌥Space selection capture: works in Terminal, not in Claude Code** (2026-10-05, resolved / accepted limitation). User confirmed Terminal selections are captured. Inside a Claude Code session (any full-screen TUI that redraws in place) the redraw clears the selection before it can be read — accepted for now. Along the way: `voice::key_down` now checks the physical Space key (`CGEventSourceKeyState`) so a missed ⌥Space release can't silently disable later presses; each press logs `[hotkey] selection captured in …: N chars` plus the AX/clipboard steps.
-- **⌥Space felt slow: window, then "Listening"** (reported 2026-09-29, changes made — untested live). (1) The hotkey handler captured the selected text on the main thread *before* showing the chat: AX calls to the front app (slow for Chrome/Electron) plus, when nothing is selected, the ⌘C clipboard fallback's wait of up to 500 ms — and the window couldn't appear until the handler returned. Now `show_chat_without_focus` puts the chat on screen immediately (`orderFrontRegardless`, no activation, so the other app stays frontmost for the ⌘C fallback); capture runs on a background thread, then the chat takes focus and `hotkey-triggered` fires. Log: `[hotkey] selection captured in …`. Side effect: the previous conversation may be visible for a moment before the greeting resets it, and keystrokes typed in that moment still go to the other app (as before). (2) The mic takes 1.3–1.9 s to go live on a Bluetooth headset (call-mode switch; can't be avoided without keeping the mic open). Now at the ⅓ s hold mark the banner shows "Getting the microphone ready… keep holding" (`voice-preparing`, grey dot), switching to "Listening…" + pop when live; `voice-listening` is emitted under the state lock so it can't be overtaken. Letting go while still "getting ready" → "Keep holding ⌥Space until you hear the pop, then talk." Possible follow-up: use the Mac's built-in mic while Bluetooth headphones are the output (no call-mode switch, faster, keeps music quality) — not built.
-- **Two waiting animations while the buddy answered** (2026-09-29, fixed — untested live): the empty streaming reply bubble showed a blinking block cursor (`chat-cursor`) while a separate typing-dots bubble also showed. Now the empty streaming bubble isn't rendered and the dots show whenever a reply has no text yet (`isThinking` no longer depends on `droidState === "thinking"`, so the dots also cover tool rounds like opening settings/guides). `.chat-cursor` CSS removed.
-- **Replies too long** (reported 2026-09-29, change made — untested live): the only length guidance was "You are concise" at the top of a long system prompt, and the settings/how-to rules encouraged restating every step plus a closing "tell me when you're done" line. Now `LENGTH_RULES` sits at the very END of the system prompt (small models weight recent, concrete instructions): ≤3 short sentences or ≤3 steps, no preamble / question echo / closing line, detail only on request; summaries ≤5 bullets. Settings/how-to rules now say "at most 3 steps, don't restate every step"; the "invite them to tell you when done" rule was removed. `maxTokens` stays 512 on purpose — a lower hard cap would cut replies mid-sentence.
-- **Hold-to-talk returned nothing on Bluetooth headsets** (reported 2026-09-28, fix built — needs a live check on the headset). Works on built-in mic; on Bluetooth it "worked a couple of times then stopped". Cause: opening a Bluetooth headset's mic switches it into call mode, which fires `AVAudioEngineConfigurationChange` ~50–250 ms after the engine starts. The dictation tap was installed with the pre-switch input format and the change was ignored, so after the switch the tap delivered near-silence (measured peak 0.03). The latency fix made it worse by starting the mic at key-down, right when the switch happens. Fix (`speech_analyzer.swift`): tap with `format: nil` (current device format); on configuration change, reinstall the tap and restart the engine; the session is registered *before* `engine.start()` so the early notification finds it. Verified on the user's headset via the C-API harness, 3/3 runs: change caught and restarted, peak 0.14–0.30. Diagnostics kept: `dictation: mic started`, `audio device changed — restarted with …`, and the per-session `N buffers, peak level …` line at stop. Meeting transcription's mic path (`AiBuddyMicSession` in `capture.m`) was checked 2026-09-28 and already handles it: its config-change observer is registered before start and rebuilds the whole engine with the new format. Verified on the user's Bluetooth headset (harness including `capture.m`): switch caught ~100 ms after start, one rebuild, no rebuild loop, audio flowing steadily for 10 s. Not verified: speech recognition quality on Bluetooth in a real meeting, and dictation + meeting mic open at the same time on Bluetooth.
-- **Hold-to-talk dropped words before a pause** (reported 2026-09-28, fix built — untested live). Two causes, both measured:
-  1. **Startup latency (main cause):** the mic only started after the 300 ms hold check *and* lane + mic setup — measured 1.0 s on first use (lane init 141 ms, mic start 770 ms) and 0.2–0.4 s later, i.e. ~0.5–1.3 s after pressing. Words spoken right after pressing were never recorded. Fix: a spare `AnalyzerLane` is prewarmed at launch and after each use (`aibuddy_dictation_prewarm`), and the mic starts on **key-down** (only when mic permission is already granted, so a tap never shows the permission prompt). A tap discards the audio (`voice-cancelled`); the banner + a "Pop" sound (`aibuddy_play_listen_cue`) appear once the hold is confirmed. Side effect: the orange mic indicator may flash briefly on a plain tap.
-  2. **One in-progress slot:** `Heard` kept finals + a single volatile string, so a new stretch after a pause overwrote the previous stretch's in-progress text; if finalization was cut short at release (2 s cap), the first stretch was lost. Now results are kept per time range (a final supersedes in-progress stretches that started before it ended; an in-progress result supersedes in-progress ones from its start on). Finish cap raised to 4 s and a timeout is logged. 5 unit tests built from real SpeechTranscriber traces.
-  - How it was verified: harness feeding `say`-generated speech with 350/600/900/1800 ms pauses through the real `AnalyzerLane` at real-time pace (all complete), plus timing each startup step. Logs to watch: `[voice] mic started …ms after press`, `[voice] final […]`, `[voice] sending: …`, `dictation: finish timed out`.
-  - Known edge: pressing again within ~0.3 s of releasing can reset the shared `Heard` before the previous result is sent.
-- **`dump-settings-anchors.mjs` once overwrote the anchor dump with an empty result** (2026-09-24, fixed): System Settings answered the JXA query with 1 pane / 0 anchors (likely still launching after the probe runs), and the script saved it, making `--check` report all 97 topics missing. Now refuses to write a dump with < 10 panes (exit 2, file unchanged); just rerun.
-- **Settings navigator: ring hiding on repeat ask — not a bug** (2026-09-24): reported, then the user confirmed it was user error. Kept from the investigation: the tracker needs 3 consecutive bad readings (~750 ms) before hiding, and `[settings_nav] ring #N: …` logs (open/found/shown/hidden-with-reason incl. frontmost bundle id) for future debugging.
-- **Settings navigator: wrong first draft flashed then got deleted** (found + fixed 2026-09-24, untested live): the nudge replaced a prose answer after it had already streamed. Now, for settings-like messages (retrieval match on the current message, no attached resource), round 0 isn't streamed — the typing indicator shows instead; normally that round is just a hidden tool call.
-- **Settings navigator: repeat request didn't reopen the page** (found 2026-09-24, FIX UNTESTED): asking for brightness a second time, the model skipped `open_settings` and replied from its previous answer ("look for the orange circle… already correct") with no page open. Cause: history carries earlier *replies* but not tool results, and the small model imitates them. Fix in `agent.ts`: (1) prompt rules — call `open_settings` every time, only mention the ring/state from THIS turn's result; (2) guard — if a no-tool reply matches `SETTINGS_CLAIM` (orange circle / System Settings / already set / slider…) while settings topics are relevant and `open_settings` hasn't run this turn, one nudge round forces the call.
-- **Duplicated tail on some replies ("stuck!ck!")** (found + fixed 2026-09-24, untested live): `generate_response` in `llm.rs` emitted `tail[..stop_pos]` when a stop sequence was found, broke, then the post-loop flush emitted the same text again. Fixed by clearing `tail` before `break`.
-- **Model size label**: UI says ~2.7 GB but the unsloth model is actually ~5 GB. `TOTAL_GB` in `src/onboarding/ModelDownload.tsx` is set to `5.0` now.
-- **`<end_of_turn>` still possible via ReactMarkdown**: If the rolling buffer misses something and `<end_of_turn>` ends up in the buffer, it renders as plain text in the UI. Could add a final `.replace(/<end_of_turn>|<start_of_turn>/g, '')` in `agent.ts` line 167 as a safety net.
-- **⚠️ Never add a second ggml-based crate**: whisper-rs (since removed) and llama-cpp-2 each statically link their own bundled ggml with identical C symbol names. The linker keeps one copy, llama.cpp ran against whisper's older ggml, and the Gemma model failed to load ("tensor 'per_layer_model_proj.weight' is duplicated") with Metal lost. Fixed 2026-06-10 by removing whisper-rs. Any future ggml-linking crate (whisper-rs, other llama bindings, stable-diffusion.cpp bindings, etc.) must run in a separate process.
-- **Transcript save: not throttled in background + correct diarization** (2026-06-18): (1) The post-Stop save (diarization + 2 LLM passes) ran on a plain background thread that macOS App Nap throttled when the app wasn't frontmost — work crawled (~an hour, finishing only on refocus). Fixed with an NSProcessInfo activity assertion: `aibuddy_begin/end_processing_activity` (`capture.m`, `NSActivityUserInitiated`) wrapped by an RAII `ActivityGuard` at the top of `save_transcript`. (2) Diarization fed the WAV at its recorded rate (SpeechAnalyzer's ~48 kHz) to 16 kHz-trained models → slow + 57 phantom speakers; now `diarization::diarize` resamples to 16 kHz (linear `resample_to_16k`, no new dep) and uses clustering `threshold 0.7` (was 0.5). (3) Safety net: `apply_diarization` keeps "Them" instead of garbage labels when diarization returns > 10 distinct speakers (`MAX_TRUSTED_SPEAKERS`).
-- **Speaker diarization** (2026-06-14): the "Them" stream is split into Speaker 1/2/3 in the saved file, OpenWhispr-style. Local, post-meeting: during a session the SpeechAnalyzer engine tees the converted Them audio to `<app data>/them-session.wav` (Swift `AVAudioFile` in `speech_analyzer.swift`, only when models installed); on Stop, `save_transcript` runs `diarization::diarize` (sherpa-onnx: pyannote-segmentation-3.0 + 3D-Speaker CAM++ via `sherpa-rs` crate, `download-binaries` feature — prebuilt onnxruntime/sherpa dylibs, NO ggml so no llama collision), then `apply_diarization` relabels each "them" segment by max time-overlap (segments carry audio-relative `start_sec`/`end_sec` from SpeechTranscriber's `.audioTimeRange`). WAV always deleted after. Models (~36 MB) download on demand via `diarization_models_status`/`install_diarization_models` (segmentation is a tar.bz2 extracted with system `tar`); TranscriptPanel shows a download note when missing. Mic ("Me") is never diarized. Pre-26 legacy engine has no time ranges → no recording → no diarization (stays Me/Them).
-- **Quit-time SIGABRT after transcription** (2026-06-14, FIXED): the bundled release app aborted on quit *after* a transcription session (crash stack: `NSApplication terminate:` → `exit()` → `__cxa_finalize_ranges` → `abort`, all `aibuddy` frames). Cause: the statically-linked Swift SpeechAnalyzer engine's process-global `SAEngine.lanes` holds `SpeechAnalyzer` actors + Tasks; tearing those Swift concurrency objects down inside `cxa_finalize` aborts. Fresh launch+quit was clean (lanes empty) — confirming the trigger is having started transcription. Fix: `lib.rs` now uses `.build()?.run(|_app, event| …)` and calls `libc::_exit(0)` on `RunEvent::Exit`, bypassing the aborting finalizers. Safe: SQLite autocommits, transcripts write incrementally (live file has all finals). Minor: quitting within ~4.5 s of Stop skips the subject-rename (file keeps "Meeting in progress" name but full content).
-- **Distributable dylib bundling** (2026-06-14, DONE): the bundled `.app` now ships `libsherpa-onnx-c-api.dylib` + `libonnxruntime.1.17.1.dylib` in `Contents/Frameworks/` via `bundle.macOS.frameworks` in tauri.conf.json, and `build.rs` bakes an `@executable_path/../Frameworks` rpath into the binary (dev worked only via cargo's injected dylib path — a Finder-launched .app had none). Verified: bundled binary's rpath + both dylibs present + dyld maps them into the live process. ⚠️ The onnxruntime filename version (`1.17.1`) is hardcoded in tauri.conf.json — if sherpa-rs bumps onnxruntime, update that path or `tauri build` fails at bundling.
-- **Finalize-status persistence + non-silent diarization/summary** (2026-06-22): an hour-long meeting finalized but the status bar vanished on a tab switch and the file had no summary/speakers (both failing silently). Fixes: (1) `TranscriptStore.processing` (stage + working path) set/updated/cleared across `save_transcript` via `set_processing`, exposed through `get_transcript_files` (`processingStage`/`processingPath`); TranscriptPanel restores the finalizing bar on mount so it survives tab switches. (2) `apply_diarization` returns bool + cap raised 10→24 (real meetings can have many speakers); on discard/failure emits `transcript-speakers-unavailable` → chat says so instead of silently keeping "Them". (3) `generate_summary` now **map-reduces** long transcripts (>9000 chars → 8000-char chunks, summarize each, then summarize the notes) so the WHOLE meeting is summarized, not just `generate_text`'s first ~12000 chars; on genuine empty, the file shows "_Summary unavailable for this meeting._" (new `SummarySection` enum: Pending/Text/Unavailable) instead of the misleading "generated when the session ends" placeholder.
-- **Save-progress UX** (2026-06-18): the post-Stop processing (tens of seconds) used to show only a generic "finalizing…". `save_transcript` now emits `transcript-progress` events ("Identifying speakers…", "Writing summary…"); the TranscriptPanel status bar shows the live stage with a spinner, and ChatPanel injects one heads-up line ("Writing up your meeting notes… 📝", deduped per session via `processingNotedRef`) so users on the Chat tab also get feedback between "stopped" and "stored".
-- **Transcript status bar** (2026-06-12): between transcript area and buttons. Keyed on live-file existence, not the transcribing flag: recording → pulsing dot + live-file link + "saved"/"unsaved changes" (unsaved = partials exist; the live file only gets finals); Stop→rename window → link + "finalizing…" (or "save failed — file kept", with `transcript-save-failed` keeping the link for recovery); after save → "Saved to <file>" link. Empty session → backend emits `transcript-discarded` (live file deleted) and the bar clears. Backend: `TranscriptStore.last_saved` + `get_transcript_files` (survives tab-switch remounts).
-- **Live meeting-notes file** (2026-06-11, replaced the recovery journal): `YYYY-MM-DD HHMM - Meeting in progress.md` is created in the transcript folder at session start (chat's started message links to it) and fully re-rendered on every final segment, so the user can watch it grow. On save: subject generated → file rewritten with real header → renamed to `… - Subject.md` (include-time setting honored, collisions get " (2)"). Empty session → live file deleted. Crash mid-meeting → "Meeting in progress" file remains with everything up to the last final. Live updates are finals-only (partials are volatile).
-- **Transcript meeting-resilience** (2026-06-11, after live-meeting failures): lanes NEVER kill the session on errors anymore — repeated errors (>5 in 10 s) put the lane in a 30 s cooldown then the energy gate retries (`_errorCooldownUntil` in capture.m); a chat warning ("Heads up: …") is emitted via `transcription-warning` (source = -2). Fatal `transcription-error` (-1) now also triggers a save so an abnormal stop can't lose the file. Natural mid-stream finals can be TRUNCATED vs the last partial — the handler delivers whichever is longer (the dropped tail's audio is gone from recognition, so this can't duplicate).
-- **Transcript: speech permission in dev**: TCC entries for the unbundled dev binary can invalidate across rebuilds (cdhash changes), so re-prompting for Speech Recognition in dev is normal. Stale denial: `tccutil reset SpeechRecognition`.
-- **Transcript: request rotation**: recognition requests are rotated every 50 s mid-monologue (Apple guidance ~1 min/request). If text ever drops at a rotation seam, look at `_rotate` in `capture.m`.
-- **Transcript: pending-flush at request ends** (2026-06-11, v2 — replaced immediate flush + suppression, which lost 10–20 s chunks at every rotation because partials lag the audio and the suppressed final often had MORE text). When a request ends (gate close, 25 s rotation, Stop), `_endRequestPending` in `capture.m` snapshots the last partial and waits for the ended task's final; resolution = longer(final, partial), triggered by the final, an error, a 2 s timeout, or the first result of the next request (ordering guarantee — finals never land out of order). Watch `pending resolved by <reason> (+N chars vs partial)` logs to see tail recovery. Lanes outlive stop() by 4 s; the save task waits 4.5 s.
-- **Transcript: energy-gated recognition**: lanes only run a recognition task while there is sound on them (RMS gate 0.008, 2 s hold in `capture.m`). Continuously-running tasks on silent lanes churned `kAFAssistantErrorDomain 1110` errors every ~350 ms and destabilized BOTH lanes' recognition (fixed 2026-06-10). Benign errors (1110/203/216/301) send the lane idle; the gate reopens on sound. Trade-off: ~100–200 ms of audio at utterance onset is lost while the gate opens.
-- **Orphaned whisper model file**: `~/Library/Application Support/com.aibuddy.app/models/ggml-base.en.bin` (145 MB) is no longer used and can be deleted.
-- **Droid drag conflict**: `onMouseDown` in DroidOverlay calls both `startDragging()` and `save_frontmost_app()` — these race. If the user is dragging (not clicking), `save_frontmost_app` fires unnecessarily but harmlessly.
-- **`onboarding_complete` flag**: If this file exists but the model isn't downloaded, the app silently skips download. Delete `~/Library/Application Support/com.aibuddy.app/onboarding_complete` to re-run onboarding.
+- **Permissions are tied to the code signature.** Ad-hoc signatures change every build → after installing a new build, Accessibility (and possibly Microphone) must be re-granted: remove AI Buddy from the list (–) and re-add, or `tccutil reset Accessibility com.aibuddy.app`. Fixed properly only by Developer ID signing. The dev binary runs under Terminal, so TCC attributes it to Terminal; dev speech-permission re-prompts after rebuilds are normal (`tccutil reset SpeechRecognition`).
+- **Hardened runtime + ad-hoc signing = launch crash** ("cannot be opened because of a problem": library validation rejects the bundled dylibs, "different Team IDs"). Keep `hardenedRuntime: false` until Developer ID signing. Before sharing any build: `codesign --verify --deep --strict` and launch it once from Terminal (TESTS.md).
+- **⚠️ Never add a second ggml-based crate** (whisper-rs etc.): two statically linked ggml copies collide (Gemma failed to load, Metal lost). Run any such engine in a separate process.
+- **onnxruntime dylib name is hardcoded** (`libonnxruntime.1.17.1.dylib` in `tauri.conf.json` and `tauri.universal.conf.json`) — update both if sherpa-rs bumps onnxruntime.
+- **CMake caches the deployment target** — if llama.cpp fails on `std::filesystem` after changing it: `rm -rf src-tauri/target/release/build/llama-cpp-sys-2-*`.
+- **Quit after transcription**: `lib.rs` calls `libc::_exit(0)` on `RunEvent::Exit` because tearing down the Swift SpeechAnalyzer objects in `cxa_finalize` aborts. Quitting within ~4.5 s of Stop skips the subject rename (full content still saved).
+- **Bluetooth mic start** takes 1.3–1.9 s (call-mode switch); starting the mic while a reply is being read aloud stalls the main thread ~0.6 s once.
+- **macOS can't give a "one-click allow"** for Accessibility; the system prompt + Settings toggle is the only path.
+- **`dump-settings-anchors.mjs`** refuses to save a dump with < 10 panes (System Settings sometimes answers while still launching) — just rerun.
+- **Settings probe output must stay out of the repo** (it lists this Mac's apps, devices and networks).
+- **Legacy (pre-26) transcription internals**: energy gate (RMS 0.008, 2 s hold; ~100–200 ms lost at onset), 50 s request rotation (`_rotate`), pending-flush at request ends (`_endRequestPending`, logs `pending resolved by …`).
+- `onboarding_complete` exists but the model is missing → download is skipped; delete `~/Library/Application Support/com.aibuddy.app/onboarding_complete` to re-run onboarding.
+- `<end_of_turn>` could still render if the rolling buffer misses it — a final `.replace(/<end_of_turn>|<start_of_turn>/g, "")` in `agent.ts` would be a cheap safety net.
+- Droid `onMouseDown` races `startDragging()` and `save_frontmost_app()` — harmless.
+- Orphaned `~/Library/Application Support/com.aibuddy.app/models/ggml-base.en.bin` (145 MB) from the removed whisper engine can be deleted.
+
+---
+
+## Resolved bugs — history and lessons
+
+- **2026-10-09 Logs printed private content** → counts/timings only (`[hotkey]`, `[voice]`, `[greeting]`, transcript subject). File paths still logged (a saved transcript's name includes its subject).
+- **2026-10-06 Accessibility loop on installed builds** → the bundle wasn't signed at all (identifier `aibuddy-<hash>`), so TCC never matched; fixed with ad-hoc bundle signing. The first signed build crashed at launch (hardened runtime) → `hardenedRuntime: false`. Verified with a 6 s launch.
+- **2026-10-06 Intel: crash on first question** → CPU-only on x86_64 (⏳ on real Intel, see Backlog → Intel).
+- **2026-10-05 ⌥Space didn't switch to Chat while transcribing** ✅ → switch tabs before awaiting `get_pending_text` (a failed await used to abort the handler). Root cause not proven.
+- **2026-10-05 Chat flashed away and back when holding ⌥Space** ✅ → Tauri's `set_focus` ordered the window front before activating (behind the active app until activation); now `aibuddy_focus_window_keep_front`. A simulated test claimed focus wasn't taken — an artifact of synthetic key events.
+- **2026-10-05 System ding on ⌥Space** ⏳ → ⌘C on a disabled Copy menu item; skipped for native text controls with no selection.
+- **2026-10-05 No cue for hold-to-talk on the Transcript tab** ✅ → ⌥Space switches to Chat; red tab dots for live mic.
+- **2026-09-29 ⌥Space slow (window, then "Listening")** ✅ → show first, capture in background; "getting ready" stage for slow mics.
+- **2026-09-29 Two waiting animations** → only the typing dots remain.
+- **2026-09-28 Hold-to-talk returned nothing on Bluetooth** ✅ → stale tap format after the headset's call-mode switch; tap with `format: nil` + rewire/restart on config change. Lesson: register the session before `engine.start()` — the change arrives ~50 ms later.
+- **2026-09-28 Hold-to-talk dropped words before a pause** → (1) startup latency ~0.5–1.3 s (measured) → mic on key-down + prewarmed lane; (2) one in-progress slot → per-time-range segments (5 unit tests from real traces). Verified with `say`-generated speech through the real `AnalyzerLane`.
+- **2026-09-24 Settings: repeat request didn't reopen the page** ✅ → the model imitated its earlier reply; prompt rules + `SETTINGS_CLAIM` nudge; first round not streamed for settings messages.
+- **2026-09-24 Duplicated reply tail ("ck!ck!")** → `llm.rs` flushed the stop-sequence prefix twice; `tail` now cleared before `break`.
+- **2026-09-24 Ring "disappearing" on repeat** — user error; kept the 3-reading grace period and `[settings_nav] ring #N` logs.
+- **2026-06-22 Finalize status lost on tab switch; silent summary/diarization failures** → `TranscriptStore.processing`, map-reduce summaries, explicit "speakers unavailable" / "summary unavailable".
+- **2026-06-18 Save crawled in the background** → App Nap; `ActivityGuard` activity assertion. Diarization at the wrong sample rate → resample to 16 kHz.
+- **2026-06-17 Inline edits lost line breaks** → raw `<replace>` blocks instead of JSON strings; Gmail "read-only" → paste-over-selection fallback.
+- **2026-06-14 Quit-time SIGABRT after transcription** → `_exit(0)` on exit. **Dylibs missing in Finder-launched app** → bundle in `Contents/Frameworks` + rpath.
+- **2026-06-12 Text lost at speaker switches** → SFSpeechRecognizer allows one on-device task at a time; moved to SpeechAnalyzer on macOS 26.
+- **2026-06-10 Gemma failed to load** → duplicate ggml from whisper-rs; removed whisper-rs.
 
 ---
 
 ## How to Run
 
 ```bash
-# Install deps (first time only)
+# First time
 brew install cmake
 cd /Users/almithani/projects/smbsoft/aibuddy
 npm install
 
-# Run dev server
+# Dev
 npm run tauri dev
-```
 
-Model is stored at:
-```
-~/Library/Application Support/com.aibuddy.app/models/gemma-4-E4B-it-Q4_K_M.gguf
+# Release builds
+npm run tauri build          # Apple Silicon
+npm run build:universal      # Intel + Apple Silicon
 ```
 
 ---
@@ -266,33 +226,33 @@ Model is stored at:
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/llm.rs` | LLM inference, streaming, stop-sequence rolling buffer |
-| `src-tauri/src/accessibility.rs` | macOS AX layer — get/set selected/focused text, `PrevApp` state |
-| `src-tauri/src/download.rs` | Model download, `model_path()` checks resource dir then app data dir |
-| `src-tauri/src/memory.rs` | Unified SQLite `memory` table (rules + settings), legacy-table migration |
-| `src-tauri/src/lib.rs` | Tauri setup, window management, command registration |
-| `src/lib/agent.ts` | TypeScript tool-calling agent loop |
-| `src/components/ChatPanel/ChatPanel.tsx` | Chat UI, streams tokens, calls `runAgent` |
-| `src/components/Droid/DroidOverlay.tsx` | Droid click/drag, calls `save_frontmost_app` on mousedown |
-| `src/onboarding/ModelDownload.tsx` | Download progress UI |
-| `src-tauri/.cargo/config.toml` | macOS 26 SDK C++ header fix (required for llama-cpp-2 to build) |
-| `src-tauri/tauri.conf.json` | Three-window config (onboarding, droid, chat) |
-| `src-tauri/src/transcription.rs` | Thin Rust layer: speech permission commands, start/stop, segment/error event emission |
-| `src-tauri/src/capture.m` | ObjC transcription engine: ScreenCaptureKit (system audio) + AVAudioEngine (mic), each feeding an SFSpeechRecognizer lane with request rotation and error recovery |
-| `src-tauri/Info.plist` | Usage descriptions (speech recognition, microphone) — embedded in dev binary AND merged into bundled .app |
-| `src/lib/settingsGuide.ts` | Settings navigator: catalog types, `searchSettings` retrieval, topic list formatting |
-| `scripts/build-settings-catalog.py` | Source of the 97 settings topics → generates `src/lib/settingsCatalog.json` (shared by TS + Rust) |
-| `src-tauri/src/settings_nav.rs` / `settings_nav.m` | `open_system_settings` (deep link, verify, relaunch, find control, state, ring window) + `get_mac_info` |
-| `scripts/dump-settings-anchors.mjs`, `scripts/settings-controls-probe.swift` | Dev checks: OS anchor dump, `--check`, `--pages`, `--verify-controls`; AX control probe |
-| `TESTS.md` | Automated tests, macOS dev checks, and manual checklists per feature |
-| `src/components/TranscriptPanel/TranscriptPanel.tsx` | Transcript UI: permission flow, start/stop, speaker-turn display with live partials, send-to-chat |
-
----
-
-## Tomorrow's Priority Order
-
-1. **Verify accessibility permission** — add dev binary to AX list, re-test inline editing
-2. **Debug `save_frontmost_app` timing** — if AX still fails, add a `console.log` in devtools to confirm the PID being saved is the external app's PID (not `0` or AI Buddy's own PID)
-3. **Test full inline editing loop** — select text → click droid → "clean this up" → text replaced
-4. **If AX works**: build the Detail Panel (memory management UI)
-5. **Then**: `npm run tauri build` for the `.dmg`
+| `src/lib/agent.ts` | Agent loop, system prompt (`FEATURES`, `TOOL_DOCS`, `LENGTH_RULES`), tool execution, settings nudge |
+| `src/components/ChatPanel/ChatPanel.tsx` | Chat UI, ⌥Space handling, hold-to-talk cards, read-aloud, tabs + recording dots, permission message |
+| `src/components/TranscriptPanel/TranscriptPanel.tsx` | Transcript UI: start/stop, live turns, status bar, send to chat |
+| `src/components/DetailPanel/DetailPanel.tsx` | Memory panel (≡ button) |
+| `src/components/Highlight/` | Orange ring window for the settings navigator |
+| `src/lib/topicSearch.ts`, `settingsGuide.ts`, `howtoGuide.ts` | Shared ranking + settings/how-to catalog access |
+| `src/lib/displayPrefs.ts`, `src/app.css` | Follow macOS display settings; theme tokens (dark, light, contrast, transparency, motion) |
+| `src/lib/memory.ts` | Memory types + friendly labels |
+| `src/onboarding/` | Onboarding flow (model download, accessibility) |
+| `src-tauri/src/lib.rs` | Tauri setup, windows, ⌥Space handler, command registration |
+| `src-tauri/src/llm.rs` | Model load (GPU / CPU-only on Intel), generation, stop sequences |
+| `src-tauri/src/accessibility.rs` | AX selected text, inline edit, clipboard fallback, `PrevApp` |
+| `src-tauri/src/voice.rs`, `voice.m` | Hold-to-talk state machine, read-aloud (AVSpeechSynthesizer), listen cue |
+| `src-tauri/src/speech_analyzer.swift` | SpeechAnalyzer lanes (meetings + dictation), prewarm, device-change handling |
+| `src-tauri/src/capture.m` | Meeting audio capture (ScreenCaptureKit + mic), legacy SFSpeechRecognizer lanes |
+| `src-tauri/src/transcription.rs`, `diarization.rs`, `speech_assets.rs` | Transcript store/save/summary, speaker diarization, speech model assets |
+| `src-tauri/src/settings_nav.rs`, `settings_nav.m` | `open_system_settings` (deep link, verify, relaunch, ring, state), `get_mac_info`, window helpers |
+| `src-tauri/src/howto.rs` | Opens how-to apps from the catalog |
+| `src-tauri/src/display_prefs.rs`, `display_prefs.m` | Read + watch macOS text size / contrast / transparency / motion |
+| `src-tauri/src/greeting.rs` | Cached personalised greeting |
+| `src-tauri/src/memory.rs` | SQLite memory (rules + settings) |
+| `src-tauri/src/download.rs` | Model download |
+| `src-tauri/build.rs` | Compiles the ObjC files + Swift engine, rpath |
+| `src-tauri/tauri.conf.json`, `tauri.universal.conf.json` | Windows (onboarding, droid, chat, highlight), bundle/signing; universal override |
+| `src-tauri/Info.plist` | Microphone + speech recognition usage text |
+| `src-tauri/.cargo/config.toml` | macOS 26 SDK C++ header fix for llama.cpp |
+| `scripts/build-settings-catalog.py`, `build-howto-catalog.py` | Sources of the settings (97) and how-to (47) catalogs |
+| `scripts/dump-settings-anchors.mjs`, `settings-controls-probe.swift`, `settings-probe-pages.txt` | Dev checks: anchors, catalog/control verification, AX probe |
+| `scripts/bump-version.mjs` | Version bump across the three manifests |
+| `TESTS.md` | Automated tests, macOS dev checks, manual checklists |

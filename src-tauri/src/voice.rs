@@ -332,7 +332,7 @@ extern "C" fn on_speech(
         return;
     }
     if is_final {
-        eprintln!("[voice] final [{start:.2}–{end:.2}] {text}");
+        eprintln!("[voice] final [{start:.2}–{end:.2}] {} chars", text.chars().count());
     }
     let heard = {
         let Ok(mut s) = STATE.lock() else { return };
@@ -351,7 +351,7 @@ extern "C" fn on_dictation_done(ctx: *mut std::ffi::c_void) {
         return;
     }
     let text = STATE.lock().map(|s| s.heard.text()).unwrap_or_default();
-    eprintln!("[voice] sending: {text:?}");
+    eprintln!("[voice] sending {} chars", text.chars().count());
     let _ = app.emit("voice-result", TextPayload { text });
 }
 

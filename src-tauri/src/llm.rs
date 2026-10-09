@@ -13,6 +13,21 @@ use tauri::Emitter;
 
 use crate::download::model_path;
 
+// Intel Macs run the model on the CPU only. llama.cpp's Metal backend on
+// Intel/AMD GPUs lacks features newer models need; with every layer on the GPU
+// the app crashed on the first question on Intel, while Apple Silicon was fine.
+// `op_offload`/`offload_kqv` off too, so no work is sent to the GPU at all.
+const USE_GPU: bool = cfg!(not(target_arch = "x86_64"));
+
+fn gpu_layers() -> u32 {
+    if USE_GPU { 9999 } else { 0 }
+}
+
+/// Applies the CPU/GPU choice above to a context's parameters.
+fn with_gpu_choice(params: LlamaContextParams) -> LlamaContextParams {
+    params.with_offload_kqv(USE_GPU).with_op_offload(USE_GPU)
+}
+
 // Backend is global and initialised once — llama_cpp_2 panics if init() is called twice.
 static BACKEND: OnceLock<LlamaBackend> = OnceLock::new();
 
@@ -67,8 +82,9 @@ pub fn load_model(
         LlamaBackend::init().expect("Failed to initialise llama.cpp backend")
     });
 
-    // Use all GPU layers on Apple Silicon; falls back to CPU if Metal unavailable.
-    let model_params = LlamaModelParams::default().with_n_gpu_layers(9999);
+    // All layers on the GPU on Apple Silicon; CPU only on Intel (see USE_GPU).
+    let model_params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers());
+    eprintln!("[llm] loading model ({})", if USE_GPU { "GPU" } else { "CPU only — Intel" });
     let model = LlamaModel::load_from_file(backend, &path, &model_params)
         .map_err(|e| format!("Failed to load model: {e}"))?;
 
@@ -103,7 +119,7 @@ pub fn generate_short_text(
         .str_to_token(&prompt, AddBos::Always)
         .map_err(|e| format!("Tokenisation failed: {e}"))?;
 
-    let ctx_params = LlamaContextParams::default()
+    let ctx_params = with_gpu_choice(LlamaContextParams::default())
         .with_n_ctx(Some(NonZeroU32::new(2048).unwrap()))
         .with_n_threads(
             std::thread::available_parallelism()
@@ -202,7 +218,7 @@ pub fn generate_text(
         tokens = tokens[start..].to_vec();
     }
 
-    let ctx_params = LlamaContextParams::default()
+    let ctx_params = with_gpu_choice(LlamaContextParams::default())
         .with_n_ctx(Some(NonZeroU32::new(N_CTX as u32).unwrap()))
         // n_batch must cover the whole prompt in one decode (default 2048 is
         // smaller than n_ctx, which asserts on long prompts).
@@ -317,7 +333,7 @@ pub async fn generate_response(
             ));
         }
 
-        let ctx_params = LlamaContextParams::default()
+        let ctx_params = with_gpu_choice(LlamaContextParams::default())
             .with_n_ctx(Some(NonZeroU32::new(4096).unwrap()))
             // n_batch must cover the whole prompt in one decode (default 2048 is
             // smaller than n_ctx, which asserts on long prompts — e.g. a pasted
