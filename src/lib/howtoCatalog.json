@@ -451,14 +451,25 @@
       "attach",
       "attachment",
       "send photo by email",
-      "add picture to email"
+      "add picture to email",
+      "gmail attachment"
     ],
     "steps": [
       "In Mail, start a new message with Command-N.",
       "Click the paperclip button at the top of the message.",
       "Pick the photo or file and click 'Choose File'. You can also drag it into the message."
     ],
-    "app": "com.apple.mail"
+    "app": "com.apple.mail",
+    "variants": {
+      "gmail": {
+        "url": "https://mail.google.com/mail/?view=cm&fs=1",
+        "steps": [
+          "A new Gmail message is open in your web browser.",
+          "Click the paperclip 'Attach files' button at the bottom of the message.",
+          "Pick the photo or file and click 'Open'. You can also drag it into the message."
+        ]
+      }
+    }
   },
   {
     "id": "email_reply",
@@ -467,7 +478,8 @@
     "keywords": [
       "reply",
       "answer email",
-      "respond to email"
+      "respond to email",
+      "reply in gmail"
     ],
     "steps": [
       "Click the email you want to answer.",
@@ -475,7 +487,17 @@
       "Type your answer and click the paper-plane 'Send' button."
     ],
     "shortcut": "Command-R",
-    "app": "com.apple.mail"
+    "app": "com.apple.mail",
+    "variants": {
+      "gmail": {
+        "url": "https://mail.google.com/mail/",
+        "steps": [
+          "Gmail is open in your web browser. Click the email you want to answer.",
+          "Click 'Reply' below the message (or the curved arrow at the top right).",
+          "Type your answer and click the blue 'Send' button."
+        ]
+      }
+    }
   },
   {
     "id": "email_new",
@@ -485,7 +507,9 @@
       "send email",
       "new email",
       "write email",
-      "compose"
+      "compose",
+      "gmail",
+      "send a gmail"
     ],
     "steps": [
       "In Mail, press Command-N.",
@@ -493,7 +517,17 @@
       "Click the paper-plane 'Send' button."
     ],
     "shortcut": "Command-N",
-    "app": "com.apple.mail"
+    "app": "com.apple.mail",
+    "variants": {
+      "gmail": {
+        "url": "https://mail.google.com/mail/?view=cm&fs=1",
+        "steps": [
+          "A new Gmail message is open in your web browser.",
+          "Type the address in 'To', a subject, and your message.",
+          "Click the blue 'Send' button."
+        ]
+      }
+    }
   },
   {
     "id": "facetime_call",

@@ -15,7 +15,6 @@ interface ModelDownloadProps {
   onNext: () => void;
 }
 
-const TOTAL_GB = 5.0;
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 GB";
@@ -28,7 +27,19 @@ export default function ModelDownload({ onNext }: ModelDownloadProps) {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(false);
+  // Download size of the model chosen for this Mac (smaller on 8 GB Macs).
+  const [totalGb, setTotalGb] = useState(5.0);
+  const [modelName, setModelName] = useState("Gemma 4");
   const doneRef = useRef(false);
+
+  useEffect(() => {
+    invoke<{ name: string; sizeGb: number }>("model_info")
+      .then((m) => {
+        setTotalGb(m.sizeGb);
+        setModelName(m.name);
+      })
+      .catch(() => null);
+  }, []);
 
   useEffect(() => {
     // Check if already downloaded
@@ -49,9 +60,10 @@ export default function ModelDownload({ onNext }: ModelDownloadProps) {
     const setup = async () => {
       unlisten = await listen<DownloadProgress>("model-download-progress", (event) => {
         const p = event.payload;
-        setProgress(p.progress);
-        setDownloaded(p.downloaded_bytes);
-        setTotal(p.total_bytes);
+        // Progress only ever moves forward (a retry resets it explicitly).
+        setProgress((prev) => Math.max(prev, p.progress));
+        setDownloaded((prev) => Math.max(prev, p.downloaded_bytes));
+        if (p.total_bytes > 0) setTotal(p.total_bytes);
 
         if (p.error) {
           setError(p.error);
@@ -87,8 +99,8 @@ export default function ModelDownload({ onNext }: ModelDownloadProps) {
   }
 
   const droidState = progress >= 100 ? "done" : error ? "error" : "thinking";
-  const downloadedLabel = total > 0 ? formatBytes(downloaded) : `${(progress / 100 * TOTAL_GB).toFixed(1)} GB`;
-  const totalLabel = total > 0 ? formatBytes(total) : `${TOTAL_GB} GB`;
+  const downloadedLabel = total > 0 ? formatBytes(downloaded) : `${(progress / 100 * totalGb).toFixed(1)} GB`;
+  const totalLabel = total > 0 ? formatBytes(total) : `${totalGb} GB`;
 
   return (
     <div className="onboarding-root ob-screen-enter">
@@ -101,7 +113,7 @@ export default function ModelDownload({ onNext }: ModelDownloadProps) {
             <>Got it — my brain is ready! 🎉</>
           ) : (
             <>
-              Downloading my brain — about <strong>{TOTAL_GB} GB</strong>,
+              Downloading my brain — about <strong>{totalGb} GB</strong>,
               happens once.{" "}
               <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
                 WiFi recommended.
@@ -136,7 +148,7 @@ export default function ModelDownload({ onNext }: ModelDownloadProps) {
                 <span>
                   {progress >= 100
                     ? "Download complete"
-                    : `Gemma 4 4B · ${downloadedLabel} of ${totalLabel}`}
+                    : `${modelName} · ${downloadedLabel} of ${totalLabel}`}
                 </span>
                 <span>{Math.floor(progress)}%</span>
               </div>

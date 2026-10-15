@@ -17,6 +17,8 @@ export function describeMemory(item: MemoryItem): string {
       return item.value === "false"
         ? "Omit the time from transcript filenames"
         : "Include the time in transcript filenames";
+    case "email_app":
+      return item.value === "gmail" ? "Email: uses Gmail (in the web browser)" : "Email: uses the Mail app";
     case "speak_replies":
       return item.value === "always"
         ? "Read every answer out loud"

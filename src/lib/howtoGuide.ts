@@ -13,6 +13,8 @@ export interface HowtoTopic {
   shortcut?: string;
   app?: string;
   settingsTopic?: string;
+  /** Per-service versions (currently "gmail" for the email guides). */
+  variants?: Record<string, { url: string; steps: string[] }>;
 }
 
 export const HOWTO_TOPICS: HowtoTopic[] = catalog;

@@ -1,6 +1,6 @@
 # AI Buddy — Tests
 
-Last updated: 2026-10-09
+Last updated: 2026-10-15
 
 How to check the app still works: automated tests first, then the macOS-dependent
 dev checks, then manual checklists per feature. Record anything that fails as a
@@ -11,7 +11,7 @@ Known Issue in `TASKS.md`.
 ## 1. Automated (run on every change)
 
 ```bash
-cd src-tauri && cargo test --lib   # Rust unit tests (21, ~1 s)
+cd src-tauri && cargo test --lib   # Rust unit tests (30, ~1 s)
 npx tsc --noEmit                   # TypeScript type check
 ```
 
@@ -22,9 +22,12 @@ npx tsc --noEmit                   # TypeScript type check
 | Settings catalog | `src-tauri/src/settings_nav.rs` (1 test) | `settingsCatalog.json` parses and topic ids are unique |
 | How-to catalog | `src-tauri/src/howto.rs` (1 test) | `howtoCatalog.json` parses and topic ids are unique |
 | Text size scaling | `src-tauri/src/display_prefs.rs` (2 tests) | Default category is unscaled; larger categories scale up, smaller down, capped at 2.0 |
+| How-to catalog extras | `src-tauri/src/howto.rs` (+2 tests) | Email guides have https `mail.google.com` Gmail versions; an unknown service variant is refused |
+| Email drafts | `src-tauri/src/email.rs` (5 tests) | Percent-encoding; Gmail compose URL keeps its fixed base and can't be redirected by model text; mailto uses CRLF; reading "Subject:" + body (incl. `**Subject:**`, dropping `[Your Name]`); rejects drafts without subject/body |
+| Model choice | `src-tauri/src/download.rs` (2 tests) | 8 GB RAM → Gemma 4 E2B; 16/18/24/32/64 GB → Gemma 4 E4B |
 | Hold-to-talk text | `src-tauri/src/voice.rs` (5 tests) | Speech before and after a pause is kept whatever order the recognizer finalizes it in (orders taken from real traces); everything heard is sent even if nothing was finalized; untimed results; nothing said → empty |
 
-**Not covered automatically:** all frontend logic (no JS test runner yet): the agent loop, tool-call parsing, the settings-claim nudge, settings/how-to search ranking (`topicSearch.ts`), markdown-to-speech cleanup (`plainForSpeech`), and the paste/summarize heuristics.
+**Not covered automatically:** all frontend logic (no JS test runner yet): the agent loop, tool-call parsing (JSON blocks and code-style calls like `open_settings(topic="x")`), the settings-claim nudge, settings/how-to search ranking (`topicSearch.ts`), markdown-to-speech cleanup (`plainForSpeech`), and the paste/summarize heuristics.
 
 ---
 
@@ -107,6 +110,17 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] "my app is frozen" → force-quit steps (Option-Command-Escape); no app opened
 - [ ] "attach a photo to an email" → Mail opens, steps mention the paperclip
 - [ ] "join my zoom meeting" → Zoom opens, or a friendly "isn't installed" note if Zoom is missing
+- [ ] Gmail, nothing saved yet (Memory panel has no "Email:" row): "I want to send an email" → if Apple Mail is the default email app, Mail opens; otherwise the buddy asks "Mail app or Gmail?"
+- [ ] Answer "Gmail" → Memory panel shows "Email: uses Gmail"; a Gmail compose window opens in the browser with Gmail steps (no Command-N shortcut mentioned) — in the SAME reply, without asking for a recipient
+- [ ] "I want to send an email to my sister" (Gmail saved) → opens Gmail compose and gives steps; never asks for the address, subject or message
+- [ ] Repeat 5× with different wordings ("draft an email in gmail…", "write a gmail to my son", "help me reply to my mail", "attach a photo to an email") → Gmail opens EVERY time, exactly once (not two tabs)
+- [ ] "check my mail settings" / "what is email?" → does NOT open Gmail
+- [ ] "draft an email in gmail which tells my sister I'll be late this evening" → status "Writing a draft…", then Gmail opens a new message with a subject + short message filled in (no made-up reasons, no name after the sign-off); chat says to add the address and click Send
+- [ ] "send an email to bob@example.com asking if we can move lunch to Friday" → the draft opens with bob@example.com already in To
+- [ ] Same with "I use Mail" saved → the draft opens in Apple Mail, filled in
+- [ ] "I want to send an email" (nothing to write) → blank Gmail compose, no draft
+- [ ] "how do I attach a photo" → Gmail compose opens, steps mention the paperclip "Attach files"; "how do I reply to an email" → Gmail inbox opens
+- [ ] "I use the Mail app" (or delete the Memory row) → email guides open Mail again
 - [ ] "make the text bigger" → still goes to the settings topic (open_settings), not a how-to
 - [ ] "the website text is too small" → web_zoom how-to (Command-Plus) and mentions the related text-size setting
 
@@ -175,6 +189,14 @@ Toggle each in System Settings with the chat open; it should update within ~2 s.
 - [ ] With Bluetooth headphones (e.g. AirPods): start a meeting transcription, talk for a minute → "Me" lines appear throughout (terminal shows `Mic: audio configuration changed — rebuilding engine` once near the start, then `Mic RMS` rising when you talk)
 - [ ] Switch tabs during "Writing up your meeting notes…" → status bar survives
 - [ ] Quit right after a session → no crash
+
+### Low-memory Macs (8 GB)
+- [ ] **On an 8 GB Mac with 0.2.0 already installed:** install the new build → onboarding opens again and downloads the smaller model (~3.1 GB, not 5 GB) → chat works; ask several questions without "Decode Error"/"ran out of memory"; `~/Library/Application Support/com.aibuddy.app/models/` then contains only `gemma-4-E2B-it-Q4_K_M.gguf`
+- [ ] Fresh install on an 8 GB Mac → onboarding says "about 3.1 GB" and "Gemma 4 E2B"
+- [ ] During any model download (incl. `npm run tauri dev`, where React StrictMode double-runs effects) the percentage and GB counter only ever go up — no jumping back and forth
+- [ ] On the 8 GB Mac: "make the text bigger" opens Accessibility → Text Size (the small model's tool calls are understood); "how do I take a screenshot" gives the guide
+- [ ] On a 16 GB+ Mac: nothing changes — still the ~5 GB model, no re-download
+- [ ] Test the small model on a 16 GB Mac: `AIBUDDY_MODEL=e2b npm run tauri dev` → downloads E2B via onboarding; your E4B file must still be there afterwards
 
 ### Onboarding and packaging
 - [ ] Fresh onboarding (delete `~/Library/Application Support/com.aibuddy.app/onboarding_complete`) → model download, Accessibility step, restart button

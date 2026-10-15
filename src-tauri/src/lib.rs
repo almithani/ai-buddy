@@ -4,6 +4,7 @@ mod accessibility;
 mod diarization;
 mod display_prefs;
 mod download;
+mod email;
 mod greeting;
 mod howto;
 mod llm;
@@ -372,20 +373,19 @@ pub fn run() {
             voice::prewarm();
 
             // --- Window routing ---
-            let is_onboarded = data_dir.join("onboarding_complete").exists();
+            // Onboarding also covers a missing model: after an update an 8 GB Mac
+            // needs the smaller model, and onboarding's download step (other steps
+            // auto-skip when already done) is the only place that fetches it.
+            let model_ready = download::model_path(app.handle()).map(|p| p.exists()).unwrap_or(false);
+            let is_onboarded = data_dir.join("onboarding_complete").exists() && model_ready;
             if is_onboarded {
                 show_droid_window(app.handle())?;
                 show_chat_impl(app.handle())?;
                 let app2 = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    match download::model_path(&app2) {
-                        Ok(p) if p.exists() => {
-                            let state = app2.state::<LlmState>();
-                            if let Err(e) = llm::load_model(app2.clone(), state) {
-                                eprintln!("Model load error: {e}");
-                            }
-                        }
-                        _ => eprintln!("Model file not found — download it via the chat panel."),
+                    let state = app2.state::<LlmState>();
+                    if let Err(e) = llm::load_model(app2.clone(), state) {
+                        eprintln!("Model load error: {e}");
                     }
                 });
 
@@ -408,6 +408,7 @@ pub fn run() {
             get_pending_text,
             // Download
             download::check_model_exists,
+            download::model_info,
             download::start_model_download,
             download::cancel_model_download,
             // LLM
@@ -436,6 +437,9 @@ pub fn run() {
             greeting::get_greeting,
             display_prefs::get_display_prefs,
             howto::open_howto_app,
+            howto::default_email_app,
+            email::draft_email_text,
+            email::open_email_draft,
             voice::set_voice_blocked,
             voice::speak_text,
             voice::stop_speaking,

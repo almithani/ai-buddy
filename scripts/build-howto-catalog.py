@@ -5,6 +5,8 @@ Everyday "how do I…" guides. Edit topics here, then:
     node scripts/dump-settings-anchors.mjs --check-howtos
 
 Fields: app = bundle id opened by `open_howto_app` (only ever from this file);
+variants = per-service versions (currently "gmail" for the email guides), each
+with its own url + steps, picked by the `email_app` setting;
 settings_topic = id of a related settings topic in build-settings-catalog.py.
 Shortcuts are spelled out ("Shift-Command-5"): easier for seniors to follow and
 reads naturally when replies are spoken aloud.
@@ -15,7 +17,7 @@ from pathlib import Path
 TOPICS = []
 
 
-def howto(id, title, category, keywords, steps, shortcut=None, app=None, settings_topic=None):
+def howto(id, title, category, keywords, steps, shortcut=None, app=None, settings_topic=None, variants=None):
     t = {"id": id, "title": title, "category": category, "keywords": keywords, "steps": steps}
     if shortcut:
         t["shortcut"] = shortcut
@@ -23,7 +25,17 @@ def howto(id, title, category, keywords, steps, shortcut=None, app=None, setting
         t["app"] = app
     if settings_topic:
         t["settingsTopic"] = settings_topic
+    if variants:
+        t["variants"] = variants
     TOPICS.append(t)
+
+
+# Email guides default to Apple Mail; `variants` gives the same guide for a web
+# email service the user said they use (the `email_app` setting). Each variant
+# opens its `url` in the default browser — the URL comes only from here, never
+# from the model.
+GMAIL_INBOX = "https://mail.google.com/mail/"
+GMAIL_COMPOSE = "https://mail.google.com/mail/?view=cm&fs=1"
 
 
 # ── Screenshots and recording ─────────────────────────────────────────────────
@@ -181,23 +193,35 @@ howto("spell_check", "Fix a spelling mistake", "text",
 
 # ── Email and messages ────────────────────────────────────────────────────────
 howto("email_attach", "Attach a photo or file to an email", "email",
-      ["attach", "attachment", "send photo by email", "add picture to email"],
+      ["attach", "attachment", "send photo by email", "add picture to email", "gmail attachment"],
       ["In Mail, start a new message with Command-N.",
        "Click the paperclip button at the top of the message.",
        "Pick the photo or file and click 'Choose File'. You can also drag it into the message."],
-      app="com.apple.mail")
+      app="com.apple.mail",
+      variants={"gmail": {"url": GMAIL_COMPOSE, "steps": [
+          "A new Gmail message is open in your web browser.",
+          "Click the paperclip 'Attach files' button at the bottom of the message.",
+          "Pick the photo or file and click 'Open'. You can also drag it into the message."]}})
 howto("email_reply", "Reply to an email", "email",
-      ["reply", "answer email", "respond to email"],
+      ["reply", "answer email", "respond to email", "reply in gmail"],
       ["Click the email you want to answer.",
        "Click the curved arrow 'Reply' button at the top (or press Command-R).",
        "Type your answer and click the paper-plane 'Send' button."],
-      shortcut="Command-R", app="com.apple.mail")
+      shortcut="Command-R", app="com.apple.mail",
+      variants={"gmail": {"url": GMAIL_INBOX, "steps": [
+          "Gmail is open in your web browser. Click the email you want to answer.",
+          "Click 'Reply' below the message (or the curved arrow at the top right).",
+          "Type your answer and click the blue 'Send' button."]}})
 howto("email_new", "Write a new email", "email",
-      ["send email", "new email", "write email", "compose"],
+      ["send email", "new email", "write email", "compose", "gmail", "send a gmail"],
       ["In Mail, press Command-N.",
        "Type the address in 'To', a subject, and your message.",
        "Click the paper-plane 'Send' button."],
-      shortcut="Command-N", app="com.apple.mail")
+      shortcut="Command-N", app="com.apple.mail",
+      variants={"gmail": {"url": GMAIL_COMPOSE, "steps": [
+          "A new Gmail message is open in your web browser.",
+          "Type the address in 'To', a subject, and your message.",
+          "Click the blue 'Send' button."]}})
 
 # ── Calls ─────────────────────────────────────────────────────────────────────
 howto("facetime_call", "Make a FaceTime video call", "calls",

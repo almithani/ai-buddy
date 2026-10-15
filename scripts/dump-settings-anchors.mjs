@@ -37,6 +37,10 @@ if (process.argv.includes("--check-howtos")) {
   for (const id of ids.filter((id, i) => ids.indexOf(id) !== i)) problems.push(`duplicate how-to id: ${id}`);
   for (const t of howtos) {
     if (t.settingsTopic && !settingIds.has(t.settingsTopic)) problems.push(`${t.id}: settingsTopic ${t.settingsTopic} not in settings catalog`);
+    for (const [name, v] of Object.entries(t.variants ?? {})) {
+      if (!/^https:\/\//.test(v.url ?? "")) problems.push(`${t.id}: ${name} variant needs an https:// url`);
+      if (!Array.isArray(v.steps) || v.steps.length === 0) problems.push(`${t.id}: ${name} variant has no steps`);
+    }
     if (!t.app) continue;
     const found = execFileSync("mdfind", [`kMDItemCFBundleIdentifier == '${t.app}'`], { encoding: "utf8" }).trim();
     if (!found) {

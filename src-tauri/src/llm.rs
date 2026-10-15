@@ -19,13 +19,31 @@ use crate::download::model_path;
 // `op_offload`/`offload_kqv` off too, so no work is sent to the GPU at all.
 const USE_GPU: bool = cfg!(not(target_arch = "x86_64"));
 
-fn gpu_layers() -> u32 {
-    if USE_GPU { 9999 } else { 0 }
-}
-
 /// Applies the CPU/GPU choice above to a context's parameters.
 fn with_gpu_choice(params: LlamaContextParams) -> LlamaContextParams {
     params.with_offload_kqv(USE_GPU).with_op_offload(USE_GPU)
+}
+
+/// All layers on the GPU on Apple Silicon; CPU only on Intel (see USE_GPU).
+/// Low-memory Macs are handled by downloading a smaller model
+/// (`download::model_choice`). llama.cpp's automatic memory fit was tried as a
+/// safety net and dropped: it projects ~3.6 GB for Gemma 4 E4B (vs ~5.5 GB
+/// allocated), so it never reduced anything for an 8 GB Mac.
+fn model_params() -> LlamaModelParams {
+    eprintln!("[llm] loading model ({})", if USE_GPU { "GPU" } else { "CPU only — Intel" });
+    LlamaModelParams::default().with_n_gpu_layers(if USE_GPU { 9999 } else { 0 })
+}
+
+/// llama.cpp reports a failed GPU computation as a bare "Decode Error -3" —
+/// almost always out of memory on a small Mac. Say so in plain words.
+fn decode_error_message(e: impl std::fmt::Display) -> String {
+    let raw = e.to_string();
+    eprintln!("[llm] decode failed: {raw}");
+    if raw.contains("-3") {
+        "I ran out of memory on this Mac while thinking. Try closing some other apps, then ask again — or restart AI Buddy.".into()
+    } else {
+        format!("I couldn't process that ({raw}). Please try again.")
+    }
 }
 
 // Backend is global and initialised once — llama_cpp_2 panics if init() is called twice.
@@ -82,9 +100,7 @@ pub fn load_model(
         LlamaBackend::init().expect("Failed to initialise llama.cpp backend")
     });
 
-    // All layers on the GPU on Apple Silicon; CPU only on Intel (see USE_GPU).
-    let model_params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers());
-    eprintln!("[llm] loading model ({})", if USE_GPU { "GPU" } else { "CPU only — Intel" });
+    let model_params = model_params();
     let model = LlamaModel::load_from_file(backend, &path, &model_params)
         .map_err(|e| format!("Failed to load model: {e}"))?;
 
@@ -140,7 +156,7 @@ pub fn generate_short_text(
         batch.add(tok, i as i32, &[0], i as i32 == last_idx)
             .map_err(|e| format!("Batch add failed: {e}"))?;
     }
-    ctx.decode(&mut batch).map_err(|e| format!("Initial decode failed: {e}"))?;
+    ctx.decode(&mut batch).map_err(decode_error_message)?;
 
     let mut sampler = LlamaSampler::chain_simple([
         LlamaSampler::temp(0.3),
@@ -164,7 +180,7 @@ pub fn generate_short_text(
         batch.clear();
         batch.add(new_token, n_pos, &[0], true)
             .map_err(|e| format!("Token batch add failed: {e}"))?;
-        ctx.decode(&mut batch).map_err(|e| format!("Token decode failed: {e}"))?;
+        ctx.decode(&mut batch).map_err(decode_error_message)?;
         n_pos += 1;
     }
 
@@ -239,7 +255,7 @@ pub fn generate_text(
         batch.add(tok, i as i32, &[0], i as i32 == last_idx)
             .map_err(|e| format!("Batch add failed: {e}"))?;
     }
-    ctx.decode(&mut batch).map_err(|e| format!("Initial decode failed: {e}"))?;
+    ctx.decode(&mut batch).map_err(decode_error_message)?;
 
     let mut sampler = LlamaSampler::chain_simple([
         LlamaSampler::temp(0.4),
@@ -269,7 +285,7 @@ pub fn generate_text(
         batch.clear();
         batch.add(new_token, n_pos, &[0], true)
             .map_err(|e| format!("Token batch add failed: {e}"))?;
-        ctx.decode(&mut batch).map_err(|e| format!("Token decode failed: {e}"))?;
+        ctx.decode(&mut batch).map_err(decode_error_message)?;
         n_pos += 1;
     }
 
@@ -368,7 +384,7 @@ pub async fn generate_response(
             batch.add(tok, i as i32, &[0], i as i32 == last_idx)
                 .map_err(|e| format!("Batch add failed: {e}"))?;
         }
-        ctx.decode(&mut batch).map_err(|e| format!("Initial decode failed: {e}"))?;
+        ctx.decode(&mut batch).map_err(decode_error_message)?;
 
         let mut sampler = LlamaSampler::chain_simple([
             LlamaSampler::temp(0.7),
@@ -431,7 +447,7 @@ pub async fn generate_response(
             batch.clear();
             batch.add(new_token, n_pos, &[0], true)
                 .map_err(|e| format!("Token batch add failed: {e}"))?;
-            ctx.decode(&mut batch).map_err(|e| format!("Token decode failed: {e}"))?;
+            ctx.decode(&mut batch).map_err(decode_error_message)?;
             n_pos += 1;
         }
 

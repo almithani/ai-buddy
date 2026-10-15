@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { MemoryItem, describeMemory } from "./memory";
 import { findSettingsTopic, formatTopicList, searchSettings } from "./settingsGuide";
-import { findHowto, searchHowtos } from "./howtoGuide";
+import { HowtoTopic, findHowto, searchHowtos } from "./howtoGuide";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +36,7 @@ What you (AI Buddy) can do — use this to answer questions about yourself, and 
 - Talk to you: hold Option-Space, speak, and let go to send. Answers are read aloud when they talked (they can ask you to always or never read answers aloud).
 - Help with selected text: they highlight text in any app and press Option-Space (or paste it here), then you can summarize it or edit it in place.
 - Mac settings: you open the right System Settings page, point at the control and walk them through it.
+- Email: you can write a short draft and open it in Gmail or the Mail app ready to send ("email my sister that I'll be late") — they add the address if needed and click Send. Tell you "I use Gmail" or "I use Mail".
 - Everyday Mac tasks: screenshots, files, email, video calls, printing and more, with step-by-step help.
 - Memory: you remember their preferences ("call me Al", "keep answers short"); they can see and delete these in the Memory panel (the ≡ button).
 - Read files they drop onto you (text files).
@@ -55,12 +56,14 @@ Available tools:
 - set_transcript_settings    — Change where meeting transcripts are auto-saved or their filename format. Args (each optional): {"directory": "~/Desktop", "include_time": "true" or "false"}. Use when the user asks to change where transcripts/meeting minutes are stored, or to include/omit the time in transcript filenames.
 - open_settings              — Open the right System Settings page on the user's Mac and get the steps to walk them through it. Args: {"topic": "<id>"}, using an id from "Mac settings that may be relevant" below.
 - show_howto                 — Get step-by-step help for an everyday Mac task (screenshots, files, email, calls, printing, …) and open the app it's about. Args: {"topic": "<id>"}, using an id from "How-to guides that may be relevant" below.
+- set_email_app              — Remember which email they use, so email help opens the right one. Args: {"app": "gmail" or "mail"}. Use when they say they use Gmail or the Mail app.
 - set_voice_settings         — Change whether answers are read out loud. Args: {"speak_replies": "voice" (only when they asked by talking — the default), "always", or "never"}. Use when they say things like "always read your answers out loud" or "stop talking".
 - get_mac_info               — Check the Mac's macOS version, battery level, Wi-Fi on/off and sound volume/mute. No args. Use it first when the user asks about these, or when troubleshooting "no sound" / "no internet".
 
 Helping with everyday tasks:
 - For "how do I…" questions about using the Mac (taking a screenshot, finding a file, attaching a photo, a frozen app, …), call show_howto with the closest topic. Use open_settings instead when they want to change a setting.
 - Give the keyboard shortcut if there is one, plus at most 3 short steps. Don't restate every step from the result.
+- You can't write or send email yourself. When they want to write, send, reply to or attach something to an email, call show_howto (email_new, email_reply or email_attach) — never ask for the recipient, subject or message.
 
 Helping with Mac settings (many users are seniors):
 - When the user wants to change how their Mac looks, sounds, reads aloud or connects (text size, screen reader, captions, Wi-Fi, Bluetooth, volume, ...), call open_settings with the closest topic. Never make up a topic that isn't listed; if nothing fits, say kindly that you can't help with that setting yet.
@@ -199,18 +202,28 @@ async function executeTool(
           ? `Unknown topic "${call.args.topic ?? ""}". Closest topics:\n${formatTopicList(near)}`
           : `No how-to guide matches "${call.args.topic ?? ""}".`;
       }
-      let opened = "";
-      if (topic.app) {
-        opened = await invoke<boolean>("open_howto_app", { topic: topic.id })
-          .then((ok) => (ok ? "\nI've opened the app for them." : ""))
-          .catch((e) => `\nCouldn't open the app: ${e}.`);
-      }
-      const steps = topic.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
-      const shortcut = topic.shortcut ? `\nKeyboard shortcut: ${topic.shortcut}.` : "";
-      const related = topic.settingsTopic
-        ? `\nRelated setting (use open_settings if they want it): ${topic.settingsTopic}.`
-        : "";
-      return `How to: ${topic.title}.${opened}${shortcut}\nSteps:\n${steps}${related}`;
+      // Already run this turn (e.g. by the email pre-route) — don't open it twice.
+      const earlier = howtosRunThisTurn.get(topic.id);
+      if (earlier) return earlier;
+      const result = await runHowto(topic);
+      howtosRunThisTurn.set(topic.id, result);
+      return result;
+    }
+    case "set_email_app": {
+      const raw = String(call.args.app ?? "").toLowerCase();
+      // Only save a clear answer — an empty/odd value used to be saved as "mail".
+      const app = /gmail|google/.test(raw) ? "gmail" : /\bmail\b|apple/.test(raw) ? "mail" : null;
+      if (!app) return "Not saved — ask them in one short sentence: do they use the Mail app or Gmail?";
+      await invoke("set_setting", { key: "email_app", value: app });
+      const saved = app === "gmail" ? "Saved: they use Gmail." : "Saved: they use the Mail app.";
+      // Finish the email guide that was waiting on this answer, rather than
+      // relying on the model to remember it (tool results don't carry across turns).
+      const pending = pendingEmailHowto ? findHowto(pendingEmailHowto) : undefined;
+      const draftRequest = pendingDraftRequest;
+      pendingEmailHowto = null;
+      pendingDraftRequest = null;
+      if (draftRequest) return `${saved}\n${await runEmailDraft(draftRequest, onStatus)}`;
+      return pending ? `${saved}\n${await runHowto(pending)}` : saved;
     }
     case "set_voice_settings": {
       const v = String(call.args.speak_replies ?? "").toLowerCase();
@@ -239,16 +252,123 @@ async function executeTool(
   }
 }
 
+/** How-to results already produced in the current turn (cleared per runAgent). */
+const howtosRunThisTurn = new Map<string, string>();
+
+/** The email guide for a clear "write/send/reply/attach … email" request, else null. */
+function emailGuideFor(message: string): string | null {
+  const m = message.toLowerCase();
+  if (!/\b(e-?mails?|gmail|mail)\b/.test(m)) return null;
+  if (!/\b(send|write|draft|compose|reply|respond|answer|attach|new)\b/.test(m)) return null;
+  if (/\b(attach|photo|picture|file|document)\b/.test(m)) return "email_attach";
+  if (/\b(reply|respond|answer)\b/.test(m)) return "email_reply";
+  return "email_new";
+}
+
+/** Email guide waiting for the "Mail or Gmail?" answer (finished by set_email_app). */
+let pendingEmailHowto: string | null = null;
+/** Request to draft once the "Mail or Gmail?" answer arrives. */
+let pendingDraftRequest: string | null = null;
+
+/** The request says what the email should say ("…tells my sister I'll be late"). */
+function saysWhatToWrite(message: string): boolean {
+  return /\b(tell|tells|telling|say|says|saying|that|about|ask|asks|asking|thank|thanks|thanking|invite|inviting|remind|reminding|let\s+\w+\s+know|wish|wishing|congratulat\w*|apologi[sz]\w*|sorry)\b/i.test(message);
+}
+
+/** Writes a short draft with the model and opens it in Gmail or Mail, filled in. */
+async function runEmailDraft(request: string, onStatus: (s: string) => void): Promise<string> {
+  const emailApp = await emailAppPreference();
+  if (emailApp === null) {
+    pendingEmailHowto = "email_new";
+    pendingDraftRequest = request;
+    return "Ask them in one short sentence: do they use the Mail app or Gmail? When they answer, call set_email_app.";
+  }
+  onStatus("Writing a draft…");
+  let draft: { subject: string; body: string };
+  try {
+    draft = await invoke("draft_email_text", { request });
+  } catch {
+    // No draft (e.g. model busy) — still open a blank message with the steps.
+    const topic = findHowto("email_new");
+    return topic ? runHowto(topic) : "Couldn't write a draft.";
+  }
+  const to = request.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/)?.[0] ?? "";
+  try {
+    await invoke("open_email_draft", { app: emailApp, to, subject: draft.subject, body: draft.body });
+  } catch (e) {
+    return `Couldn't open the draft: ${e}. Here it is so they can copy it:\nSubject: ${draft.subject}\n${draft.body}`;
+  }
+  const where = emailApp === "gmail" ? "Gmail in their web browser" : "the Mail app";
+  const next = to ? "read it, change anything they like, then click Send" : "add the address in 'To', read it, change anything they like, then click Send";
+  return `I've written a draft and opened it in ${where}, ready to send.\nSubject: ${draft.subject}\nTell them briefly to ${next}. Don't repeat the whole message.`;
+}
+
+/** Opens what a how-to guide is about and returns its steps for the model. */
+async function runHowto(topic: HowtoTopic): Promise<string> {
+  // Email guides: Mail app or a web service the user said they use.
+  let variant: string | undefined;
+  if (topic.variants) {
+    const emailApp = await emailAppPreference();
+    if (emailApp === null) {
+      pendingEmailHowto = topic.id;
+      return "Ask them in one short sentence: do they use the Mail app or Gmail? When they answer, call set_email_app.";
+    }
+    if (emailApp !== "mail" && topic.variants[emailApp]) variant = emailApp;
+  }
+  let opened = "";
+  if (topic.app || variant) {
+    opened = await invoke<boolean>("open_howto_app", { topic: topic.id, variant })
+      .then((ok) => (ok ? (variant ? "\nI've opened Gmail in their web browser." : "\nI've opened the app for them.") : ""))
+      .catch((e) => `\nCouldn't open it: ${e}.`);
+  }
+  const stepList = variant ? topic.variants![variant].steps : topic.steps;
+  const steps = stepList.map((s, i) => `${i + 1}. ${s}`).join("\n");
+  // Mail's keyboard shortcuts don't apply in Gmail.
+  const shortcut = topic.shortcut && !variant ? `\nKeyboard shortcut: ${topic.shortcut}.` : "";
+  const related = topic.settingsTopic
+    ? `\nRelated setting (use open_settings if they want it): ${topic.settingsTopic}.`
+    : "";
+  return `How to: ${topic.title}.${opened}${shortcut}\nSteps:\n${steps}${related}`;
+}
+
+/** "gmail" | "mail" from the email_app setting; when unset, "mail" if Apple Mail
+ *  handles email links on this Mac, otherwise null (ask the user). */
+async function emailAppPreference(): Promise<string | null> {
+  const saved = await invoke<string | null>("get_setting", { key: "email_app" }).catch(() => null);
+  if (saved === "gmail" || saved === "mail") return saved;
+  const handler = await invoke<string | null>("default_email_app").catch(() => null);
+  return handler === "com.apple.mail" ? "mail" : null;
+}
+
 // ── Tool call parsing ─────────────────────────────────────────────────────────
 
 function parseToolCall(text: string): ToolCall | null {
   const match = text.match(/<tool_call>([\s\S]*?)<\/tool_call>/);
-  if (!match) return null;
+  if (!match) return parseFunctionStyleCall(text);
   try {
     return JSON.parse(match[1]) as ToolCall;
   } catch {
-    return null;
+    return parseFunctionStyleCall(text);
   }
+}
+
+// The smaller model used on 8 GB Macs (Gemma 4 E2B) sometimes writes a tool
+// call as code — `print(open_settings(topic="text_size"))` — instead of the
+// JSON block. Accept that too, but only for our own tool names.
+const CALLABLE_TOOLS = [
+  "open_settings", "show_howto", "get_mac_info", "store_preference", "get_memory",
+  "set_transcript_settings", "set_voice_settings", "set_email_app", "read_file",
+];
+const FUNCTION_CALL = new RegExp(`\\b(${CALLABLE_TOOLS.join("|")})\\s*\\(([^()]*)\\)`);
+
+function parseFunctionStyleCall(text: string): ToolCall | null {
+  const m = text.match(FUNCTION_CALL);
+  if (!m) return null;
+  const args: Record<string, string> = {};
+  for (const a of m[2].matchAll(/(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([\w.\/~-]+))/g)) {
+    args[a[1]] = a[2] ?? a[3] ?? a[4];
+  }
+  return { name: m[1], args };
 }
 
 // In-place edit: the replacement text is raw (not JSON) so line breaks and
@@ -296,6 +416,42 @@ export async function runAgent(
     ...history.map((m) => ({ role: m.role === "buddy" ? "model" : "user", content: m.content })),
     { role: "user", content: finalUserMessage },
   ];
+
+  howtosRunThisTurn.clear();
+
+  // Clear "write/send/reply/attach … email" requests open the email guide
+  // deterministically (Gmail or Mail) — the small model often answered from its
+  // own knowledge ("click Compose…") without calling show_howto, so nothing
+  // opened. Skipped when text is attached (they're working with that text).
+  const emailTopic = resourceContext ? null : emailGuideFor(userMessage);
+  if (emailTopic && !pendingEmailHowto) {
+    // "…tells my sister I'll be late" → write the draft and open it filled in.
+    const draft = emailTopic === "email_new" && saysWhatToWrite(userMessage);
+    const call: ToolCall = draft
+      ? { name: "draft_email", args: { request: userMessage } }
+      : { name: "show_howto", args: { topic: emailTopic } };
+    const result = draft ? await runEmailDraft(userMessage, onStatus) : await executeTool(call, onStatus);
+    onStatus("");
+    messages.push({ role: "model", content: `<tool_call>${JSON.stringify(call)}</tool_call>` });
+    messages.push({ role: "user", content: `<tool_result>${result}</tool_result>` });
+  }
+
+  // Answer to our own "Mail app or Gmail?" question: record it and finish the
+  // waiting email guide here, so the model only has to phrase the steps (the
+  // small model tended to start drafting the email instead). Anything else
+  // drops the question.
+  if (pendingEmailHowto) {
+    const answer = /gmail/i.test(userMessage) ? "gmail" : /\bmail\b/i.test(userMessage) ? "mail" : null;
+    if (answer) {
+      const call = { name: "set_email_app", args: { app: answer } };
+      const result = await executeTool(call, onStatus);
+      onStatus("");
+      messages.push({ role: "model", content: `<tool_call>${JSON.stringify(call)}</tool_call>` });
+      messages.push({ role: "user", content: `<tool_result>${result}</tool_result>` });
+    } else {
+      pendingEmailHowto = null;
+    }
+  }
 
   // Strip <tool_call> and <replace> blocks (complete or in-progress) from the
   // display text. Also holds back any trailing chars that could be the start of
